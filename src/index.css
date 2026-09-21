@@ -1,5 +1,5 @@
 :root {
-  --color-bg: #ffffff;
+  --color-bg: #f5f6f8;
   --color-surface: #ffffff;
   --color-text: #1a1a1a;
   --color-text-muted: #6b7280;
@@ -9,14 +9,22 @@
   --color-protein: #3b82f6;
   --color-carbs: #f59e0b;
   --color-fat: #eab308;
+  --color-danger: #b42318;
+  --color-danger-bg: #fff5f5;
+  --color-danger-border: #f0b4b4;
+  --color-input-bg: #f3f4f6;
+  --radius-card: 14px;
+  --radius-control: 12px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
   --nav-height: 64px;
   --app-max-width: 430px;
 
-  font-family: 'Segoe UI', Tahoma, 'Noto Sans Hebrew', Arial, sans-serif;
+  font-family: 'Segoe UI', Tahoma, 'Noto Sans Hebrew', 'Arial Hebrew', Arial,
+    sans-serif;
   line-height: 1.45;
   font-weight: 400;
   color: var(--color-text);
-  background-color: #f3f4f6;
+  background-color: #e8eaed;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -49,6 +57,13 @@ button {
   cursor: pointer;
 }
 
+input,
+select,
+textarea {
+  font: inherit;
+  text-align: start;
+}
+
 h1,
 h2 {
   margin: 0;
@@ -56,9 +71,10 @@ h2 {
 }
 
 h1 {
-  font-size: 1.5rem;
+  font-size: 1.375rem;
   font-weight: 700;
   letter-spacing: -0.02em;
+  line-height: 1.25;
 }
 
 p {
@@ -66,14 +82,16 @@ p {
   color: var(--color-text-muted);
 }
 
+/* Keep numeric strings readable in RTL (ratios stay outside). */
 .num {
   direction: ltr;
   unicode-bidi: isolate;
   display: inline-block;
 }
 
+/* Number inputs: LTR digits, aligned to the logical end in RTL. */
 .input-ltr {
   direction: ltr;
   unicode-bidi: isolate;
-  text-align: right;
+  text-align: end;
 }

@@ -32,7 +32,12 @@ const EMPTY_FORM = {
 }
 
 function formatMacro(value) {
-  return String(roundForDisplay(value, value % 1 === 0 ? 0 : 1))
+  const decimals = value % 1 === 0 ? 0 : 1
+  const rounded = roundForDisplay(value, decimals)
+  return rounded.toLocaleString('en-US', {
+    maximumFractionDigits: decimals,
+    minimumFractionDigits: 0,
+  })
 }
 
 function mealToForm(meal) {
@@ -493,10 +498,10 @@ function MealsPage() {
       </div>
 
       {visibleMeals.length === 0 ? (
-        <div className="products-empty">
+        <div className="empty-state">
           <p>
             {meals.length === 0
-              ? 'עדיין אין ארוחות. צרו את הארוחה הראשונה.'
+              ? 'עדיין לא שמרת ארוחות'
               : 'לא נמצאו ארוחות התואמות לחיפוש או לסינון.'}
           </p>
         </div>

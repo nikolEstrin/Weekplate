@@ -41,11 +41,20 @@ const TAG_LABELS = {
 
 function formatDisplay(value) {
   const decimals = value !== 0 && Math.abs(value) < 10 ? 1 : 0
-  return String(roundForDisplay(value, decimals))
+  const rounded = roundForDisplay(value, decimals)
+  return rounded.toLocaleString('en-US', {
+    maximumFractionDigits: decimals,
+    minimumFractionDigits: 0,
+  })
 }
 
 function formatMacro(value) {
-  return String(roundForDisplay(value, value % 1 === 0 ? 0 : 1))
+  const decimals = value % 1 === 0 ? 0 : 1
+  const rounded = roundForDisplay(value, decimals)
+  return rounded.toLocaleString('en-US', {
+    maximumFractionDigits: decimals,
+    minimumFractionDigits: 0,
+  })
 }
 
 function Num({ children }) {
@@ -397,10 +406,10 @@ function TodayPage() {
             </div>
 
             {visibleMeals.length === 0 ? (
-              <div className="products-empty">
+              <div className="empty-state">
                 <p>
                   {meals.length === 0
-                    ? 'עדיין אין ארוחות שמורות. צרו ארוחות בעמוד הארוחות.'
+                    ? 'עדיין לא שמרת ארוחות'
                     : 'לא נמצאו ארוחות התואמות לחיפוש או לסינון.'}
                 </p>
               </div>
@@ -454,10 +463,10 @@ function TodayPage() {
             </div>
 
             {visibleProducts.length === 0 ? (
-              <div className="products-empty">
+              <div className="empty-state">
                 <p>
                   {products.length === 0
-                    ? 'עדיין אין מוצרים. הוסיפו מוצרים בעמוד המוצרים.'
+                    ? 'עדיין לא הוספת מוצרים'
                     : 'לא נמצאו מוצרים התואמים לחיפוש.'}
                 </p>
               </div>
@@ -481,28 +490,32 @@ function TodayPage() {
                         </span>
                         <span className="today-pick-card__meta">
                           <Num>{formatMacro(product.caloriesPer100g)}</Num>
-                          {' קל׳ ל־100 גרם'}
+                          {' קל׳ ל־'}
+                          <Num>100</Num>
+                          {' גרם'}
                         </span>
                         <div className="today-product-qty">
                           <label htmlFor={quantityId}>כמות</label>
-                          <input
-                            id={quantityId}
-                            type="number"
-                            inputMode="decimal"
-                            min="0"
-                            step="any"
-                            className="input-ltr today-product-qty__input"
-                            value={quantityValue}
-                            onChange={(event) =>
-                              handleProductQuantityChange(
-                                product.id,
-                                event.target.value,
-                              )
-                            }
-                            aria-invalid={Boolean(error)}
-                            aria-describedby={error ? errorId : undefined}
-                          />
-                          <span className="today-product-qty__unit">גרם</span>
+                          <div className="today-product-qty__cluster">
+                            <input
+                              id={quantityId}
+                              type="number"
+                              inputMode="decimal"
+                              min="0"
+                              step="any"
+                              className="input-ltr today-product-qty__input"
+                              value={quantityValue}
+                              onChange={(event) =>
+                                handleProductQuantityChange(
+                                  product.id,
+                                  event.target.value,
+                                )
+                              }
+                              aria-invalid={Boolean(error)}
+                              aria-describedby={error ? errorId : undefined}
+                            />
+                            <span className="today-product-qty__unit">גרם</span>
+                          </div>
                         </div>
                         <NutritionSummary nutrition={previewNutrition} />
                         {error ? (
@@ -545,7 +558,8 @@ function TodayPage() {
             <h2 className="nutrition-card__label">{card.label}</h2>
             <p className="nutrition-card__values">
               <Num>
-                {formatDisplay(current[card.key])} / {formatDisplay(goals[card.key])}
+                {formatDisplay(current[card.key])} /{' '}
+                {formatDisplay(goals[card.key])}
               </Num>
               <span className="nutrition-card__unit"> {card.unit}</span>
             </p>
@@ -560,9 +574,9 @@ function TodayPage() {
             <div key={card.key} className="remaining-card__item">
               <span className="remaining-card__label">{card.label}</span>
               <span className="remaining-card__value">
-                <Num>
-                  {formatDisplay(remaining[card.key])} {card.unit}
-                </Num>
+                <Num>{formatDisplay(remaining[card.key])}</Num>
+                {' '}
+                {card.unit}
               </span>
             </div>
           ))}
@@ -579,8 +593,8 @@ function TodayPage() {
         </div>
 
         {plannerItems.length === 0 ? (
-          <div className="products-empty">
-            <p>עדיין אין פריטים להיום. לחצו על הוספה כדי להתחיל.</p>
+          <div className="empty-state">
+            <p>עדיין לא הוספת ארוחות להיום</p>
           </div>
         ) : (
           <ul className="today-item-list">
@@ -668,6 +682,14 @@ function TodayPage() {
                                 }
                                 onKeyDown={(event) => {
                                   if (event.key === 'Enter') {
+                                    event.preventDefault()
+                                    // Commit here — blur() inside keydown does not
+                                    // reliably fire React onBlur in the same turn.
+                                    commitQuantity(
+                                      item.id,
+                                      ingredientIndex,
+                                      event.currentTarget.value,
+                                    )
                                     event.currentTarget.blur()
                                   }
                                 }}
@@ -680,8 +702,11 @@ function TodayPage() {
                                 גרם
                               </span>
                             </div>
-                            <span className="today-ingredient-row__kcal num">
-                              {formatMacro(ingredientNutrition.calories)} קל׳
+                            <span className="today-ingredient-row__kcal">
+                              <Num>
+                                {formatMacro(ingredientNutrition.calories)}
+                              </Num>
+                              {' קל׳'}
                             </span>
                           </div>
                           {error ? (

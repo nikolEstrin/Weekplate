@@ -194,6 +194,61 @@ export function deleteProduct(id) {
   }
 
   saveProducts(next)
+
+  // Read raw meals before re-validation so we can strip the deleted product
+  // instead of silently dropping whole meals that still had other ingredients.
+  let rawMeals = []
+  try {
+    const raw = localStorage.getItem(MEALS_KEY)
+    if (raw != null && raw !== '') {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        rawMeals = parsed
+      }
+    }
+  } catch {
+    rawMeals = []
+  }
+
+  const cleanedMeals = []
+  for (const meal of rawMeals) {
+    if (!meal || typeof meal !== 'object') {
+      continue
+    }
+    if (typeof meal.id !== 'string' || meal.id.trim() === '') {
+      continue
+    }
+
+    const rawIngredients = Array.isArray(meal.ingredients)
+      ? meal.ingredients
+      : []
+    const ingredients = []
+    for (const ingredient of rawIngredients) {
+      if (!ingredient || typeof ingredient !== 'object') {
+        continue
+      }
+      if (ingredient.productId === id) {
+        continue
+      }
+      ingredients.push(ingredient)
+    }
+
+    if (ingredients.length === 0) {
+      continue
+    }
+
+    const result = validateMeal({ ...meal, ingredients }, next)
+    if (!result.ok) {
+      continue
+    }
+
+    cleanedMeals.push({
+      id: meal.id,
+      ...result.meal,
+    })
+  }
+  saveMeals(cleanedMeals)
+
   return true
 }
 

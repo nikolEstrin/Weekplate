@@ -23,11 +23,21 @@ const NUTRITION_FIELDS = [
 ]
 
 function formatCalories(value) {
-  return String(roundForDisplay(value, value % 1 === 0 ? 0 : 1))
+  const decimals = value % 1 === 0 ? 0 : 1
+  const rounded = roundForDisplay(value, decimals)
+  return rounded.toLocaleString('en-US', {
+    maximumFractionDigits: decimals,
+    minimumFractionDigits: 0,
+  })
 }
 
 function formatMacro(value) {
-  return String(roundForDisplay(value, value % 1 === 0 ? 0 : 1))
+  const decimals = value % 1 === 0 ? 0 : 1
+  const rounded = roundForDisplay(value, decimals)
+  return rounded.toLocaleString('en-US', {
+    maximumFractionDigits: decimals,
+    minimumFractionDigits: 0,
+  })
 }
 
 function productToForm(product) {
@@ -243,10 +253,10 @@ function ProductsPage() {
       </div>
 
       {visibleProducts.length === 0 ? (
-        <div className="products-empty">
+        <div className="empty-state">
           <p>
             {products.length === 0
-              ? 'עדיין אין מוצרים. הוסיפו את המוצר הראשון.'
+              ? 'עדיין לא הוספת מוצרים'
               : 'לא נמצאו מוצרים התואמים לחיפוש.'}
           </p>
         </div>
@@ -261,21 +271,14 @@ function ProductsPage() {
               >
                 <span className="product-card__name">{product.name}</span>
                 <span className="product-card__nutrition">
-                  <span className="num">
-                    {formatCalories(product.caloriesPer100g)} קל׳
-                  </span>
-                  {' · '}
-                  <span className="num">
-                    {formatMacro(product.proteinPer100g)} גרם חלבון
-                  </span>
-                  {' · '}
-                  <span className="num">
-                    {formatMacro(product.carbsPer100g)} גרם פחמימות
-                  </span>
-                  {' · '}
-                  <span className="num">
-                    {formatMacro(product.fatPer100g)} גרם שומן
-                  </span>
+                  <span className="num">{formatCalories(product.caloriesPer100g)}</span>
+                  {' קל׳ · '}
+                  <span className="num">{formatMacro(product.proteinPer100g)}</span>
+                  {' גרם חלבון · '}
+                  <span className="num">{formatMacro(product.carbsPer100g)}</span>
+                  {' גרם פחמימות · '}
+                  <span className="num">{formatMacro(product.fatPer100g)}</span>
+                  {' גרם שומן'}
                 </span>
               </button>
             </li>
