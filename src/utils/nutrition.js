@@ -46,6 +46,44 @@ export function sumNutrition(items) {
   return totals
 }
 
+/**
+ * Total nutrition for a meal from its ingredients.
+ * Missing products are skipped (treated as zero contribution).
+ */
+export function calculateMealNutrition(meal, products) {
+  const source = meal && typeof meal === 'object' ? meal : {}
+  const ingredients = Array.isArray(source.ingredients) ? source.ingredients : []
+  const productList = Array.isArray(products) ? products : []
+
+  const productsById = new Map()
+  for (const product of productList) {
+    if (product && typeof product === 'object' && typeof product.id === 'string') {
+      productsById.set(product.id, product)
+    }
+  }
+
+  const nutritionItems = []
+  for (const ingredient of ingredients) {
+    if (!ingredient || typeof ingredient !== 'object') {
+      continue
+    }
+    if (typeof ingredient.productId !== 'string') {
+      continue
+    }
+
+    const product = productsById.get(ingredient.productId)
+    if (!product) {
+      continue
+    }
+
+    nutritionItems.push(
+      calculateProductNutrition(product, ingredient.quantityGrams),
+    )
+  }
+
+  return sumNutrition(nutritionItems)
+}
+
 /** Remaining = goals - current. May be negative when exceeded. */
 export function remainingNutrition(current, goals) {
   const currentSafe = current && typeof current === 'object' ? current : {}
