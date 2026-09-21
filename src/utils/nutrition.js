@@ -84,6 +84,55 @@ export function calculateMealNutrition(meal, products) {
   return sumNutrition(nutritionItems)
 }
 
+/**
+ * Total nutrition for Today's planner items.
+ * Uses live product data when available; falls back to per-ingredient
+ * nutrition snapshots (for deleted products). Does not reimplement the
+ * per-100g formula — delegates to calculateProductNutrition.
+ */
+export function calculatePlannerNutrition(items, products) {
+  const list = Array.isArray(items) ? items : []
+  const productList = Array.isArray(products) ? products : []
+
+  const productsById = new Map()
+  for (const product of productList) {
+    if (product && typeof product === 'object' && typeof product.id === 'string') {
+      productsById.set(product.id, product)
+    }
+  }
+
+  const nutritionItems = []
+  for (const item of list) {
+    if (!item || typeof item !== 'object') {
+      continue
+    }
+
+    const ingredients = Array.isArray(item.ingredients) ? item.ingredients : []
+    for (const ingredient of ingredients) {
+      if (!ingredient || typeof ingredient !== 'object') {
+        continue
+      }
+      if (typeof ingredient.productId !== 'string') {
+        continue
+      }
+
+      const liveProduct = productsById.get(ingredient.productId)
+      const product = liveProduct || {
+        caloriesPer100g: ingredient.caloriesPer100g,
+        proteinPer100g: ingredient.proteinPer100g,
+        carbsPer100g: ingredient.carbsPer100g,
+        fatPer100g: ingredient.fatPer100g,
+      }
+
+      nutritionItems.push(
+        calculateProductNutrition(product, ingredient.quantityGrams),
+      )
+    }
+  }
+
+  return sumNutrition(nutritionItems)
+}
+
 /** Remaining = goals - current. May be negative when exceeded. */
 export function remainingNutrition(current, goals) {
   const currentSafe = current && typeof current === 'object' ? current : {}

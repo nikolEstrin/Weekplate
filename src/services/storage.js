@@ -1,6 +1,7 @@
 const PRODUCTS_KEY = 'weekplate_products'
 const MEALS_KEY = 'weekplate_meals'
 const GOALS_KEY = 'weekplate_goals'
+const TODAY_KEY = 'weekplate_today'
 
 const NUTRITION_FIELDS = [
   'caloriesPer100g',
@@ -460,4 +461,388 @@ export function saveGoals(input) {
 
   localStorage.setItem(GOALS_KEY, JSON.stringify(result.goals))
   return { ok: true, errors: {}, goals: result.goals }
+}
+
+function isPositiveQuantity(value) {
+  return Number.isFinite(value) && value > 0
+}
+
+function findProductById(products, productId) {
+  if (!Array.isArray(products) || typeof productId !== 'string') {
+    return null
+  }
+
+  return (
+    products.find(
+      (product) => product && typeof product === 'object' && product.id === productId,
+    ) || null
+  )
+}
+
+function snapshotIngredient(ingredient, products) {
+  const source = ingredient && typeof ingredient === 'object' ? ingredient : {}
+  const productId =
+    typeof source.productId === 'string' ? source.productId.trim() : ''
+  const quantityGrams = parseNumber(source.quantityGrams)
+
+  if (!productId || !isPositiveQuantity(quantityGrams)) {
+    return null
+  }
+
+  const product = findProductById(products, productId)
+  const snapshot = {
+    productId,
+    quantityGrams,
+  }
+
+  if (product) {
+    snapshot.productName = product.name
+    snapshot.caloriesPer100g = product.caloriesPer100g
+    snapshot.proteinPer100g = product.proteinPer100g
+    snapshot.carbsPer100g = product.carbsPer100g
+    snapshot.fatPer100g = product.fatPer100g
+  } else {
+    if (typeof source.productName === 'string' && source.productName.trim() !== '') {
+      snapshot.productName = source.productName.trim()
+    }
+    for (const field of NUTRITION_FIELDS) {
+      const value = parseNumber(source[field])
+      if (Number.isFinite(value) && value >= 0) {
+        snapshot[field] = value
+      }
+    }
+  }
+
+  return snapshot
+}
+
+function normalizePlannerIngredient(ingredient) {
+  if (!ingredient || typeof ingredient !== 'object') {
+    return null
+  }
+
+  const productId =
+    typeof ingredient.productId === 'string' ? ingredient.productId.trim() : ''
+  const quantityGrams = parseNumber(ingredient.quantityGrams)
+
+  if (!productId || !isPositiveQuantity(quantityGrams)) {
+    return null
+  }
+
+  const normalized = {
+    productId,
+    quantityGrams,
+  }
+
+  if (
+    typeof ingredient.productName === 'string' &&
+    ingredient.productName.trim() !== ''
+  ) {
+    normalized.productName = ingredient.productName.trim()
+  }
+
+  for (const field of NUTRITION_FIELDS) {
+    const value = parseNumber(ingredient[field])
+    if (Number.isFinite(value) && value >= 0) {
+      normalized[field] = value
+    }
+  }
+
+  return normalized
+}
+
+function normalizePlannerItem(item) {
+  if (!item || typeof item !== 'object') {
+    return null
+  }
+
+  if (typeof item.id !== 'string' || item.id.trim() === '') {
+    return null
+  }
+
+  const type = item.type === 'product' ? 'product' : item.type === 'meal' ? 'meal' : null
+  if (!type) {
+    return null
+  }
+
+  const name = typeof item.name === 'string' ? item.name.trim() : ''
+  if (!name) {
+    return null
+  }
+
+  const rawIngredients = Array.isArray(item.ingredients) ? item.ingredients : []
+  const ingredients = []
+  for (const ingredient of rawIngredients) {
+    const normalized = normalizePlannerIngredient(ingredient)
+    if (normalized) {
+      ingredients.push(normalized)
+    }
+  }
+
+  if (ingredients.length === 0) {
+    return null
+  }
+
+  const planned = {
+    id: item.id,
+    type,
+    name,
+    ingredients,
+  }
+
+  if (type === 'meal') {
+    if (typeof item.tag === 'string' && item.tag.trim() !== '') {
+      planned.tag = item.tag.trim().toLowerCase()
+    }
+    if (typeof item.sourceMealId === 'string' && item.sourceMealId.trim() !== '') {
+      planned.sourceMealId = item.sourceMealId.trim()
+    }
+  }
+
+  return planned
+}
+
+function readStoredTodayPlanner() {
+  try {
+    const raw = localStorage.getItem(TODAY_KEY)
+    if (raw == null || raw === '') {
+      return []
+    }
+
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      return []
+    }
+
+    const items = []
+    const seenIds = new Set()
+
+    for (const item of parsed) {
+      const normalized = normalizePlannerItem(item)
+      if (!normalized) {
+        continue
+      }
+      if (seenIds.has(normalized.id)) {
+        continue
+      }
+
+      seenIds.add(normalized.id)
+      items.push(normalized)
+    }
+
+    return items
+  } catch {
+    return []
+  }
+}
+
+export function getTodayPlanner() {
+  return readStoredTodayPlanner()
+}
+
+export function saveTodayPlanner(items) {
+  if (!Array.isArray(items)) {
+    throw new Error('today planner must be an array')
+  }
+
+  const normalized = []
+  const seenIds = new Set()
+
+  for (const item of items) {
+    const next = normalizePlannerItem(item)
+    if (!next) {
+      continue
+    }
+    if (seenIds.has(next.id)) {
+      continue
+    }
+    seenIds.add(next.id)
+    normalized.push(next)
+  }
+
+  localStorage.setItem(TODAY_KEY, JSON.stringify(normalized))
+  return normalized
+}
+
+/**
+ * Deep-clones a saved meal into an independent Today planner item.
+ * Quantities live only on the planner snapshot — never mutate getMeals().
+ */
+export function addMealToToday(meal, products) {
+  const source = meal && typeof meal === 'object' ? meal : null
+  if (!source) {
+    return { ok: false, errors: { meal: 'הארוחה לא נמצאה' }, item: null }
+  }
+
+  const name = typeof source.name === 'string' ? source.name.trim() : ''
+  if (!name) {
+    return { ok: false, errors: { name: 'יש להזין שם ארוחה' }, item: null }
+  }
+
+  const productList = Array.isArray(products) ? products : getProducts()
+  const rawIngredients = Array.isArray(source.ingredients) ? source.ingredients : []
+  const ingredients = []
+
+  for (const ingredient of rawIngredients) {
+    const snapshot = snapshotIngredient(ingredient, productList)
+    if (snapshot) {
+      ingredients.push(snapshot)
+    }
+  }
+
+  if (ingredients.length === 0) {
+    return {
+      ok: false,
+      errors: { ingredients: 'יש להוסיף לפחות מרכיב אחד' },
+      item: null,
+    }
+  }
+
+  const item = {
+    id: createId(),
+    type: 'meal',
+    name,
+    ingredients,
+  }
+
+  if (typeof source.tag === 'string' && source.tag.trim() !== '') {
+    item.tag = source.tag.trim().toLowerCase()
+  }
+
+  if (typeof source.id === 'string' && source.id.trim() !== '') {
+    item.sourceMealId = source.id.trim()
+  }
+
+  const planner = getTodayPlanner()
+  planner.push(item)
+  saveTodayPlanner(planner)
+
+  return { ok: true, errors: {}, item }
+}
+
+export function addProductToToday(product, quantityGrams) {
+  const source = product && typeof product === 'object' ? product : null
+  if (!source || typeof source.id !== 'string' || source.id.trim() === '') {
+    return { ok: false, errors: { product: 'המוצר לא נמצא' }, item: null }
+  }
+
+  const name = typeof source.name === 'string' ? source.name.trim() : ''
+  if (!name) {
+    return { ok: false, errors: { name: 'יש להזין שם מוצר' }, item: null }
+  }
+
+  const quantity = parseNumber(quantityGrams)
+  if (!isPositiveQuantity(quantity)) {
+    return {
+      ok: false,
+      errors: { quantityGrams: 'הכמות חייבת להיות גדולה מאפס' },
+      item: null,
+    }
+  }
+
+  const ingredient = snapshotIngredient(
+    { productId: source.id, quantityGrams: quantity },
+    [source],
+  )
+
+  if (!ingredient) {
+    return {
+      ok: false,
+      errors: { quantityGrams: 'הכמות חייבת להיות גדולה מאפס' },
+      item: null,
+    }
+  }
+
+  const item = {
+    id: createId(),
+    type: 'product',
+    name,
+    ingredients: [ingredient],
+  }
+
+  const planner = getTodayPlanner()
+  planner.push(item)
+  saveTodayPlanner(planner)
+
+  return { ok: true, errors: {}, item }
+}
+
+/**
+ * Updates a single ingredient quantity on a Today planner item only.
+ * Does not touch saved meals in weekplate_meals.
+ */
+export function updateTodayItemQuantity(itemId, ingredientIndex, quantityGrams) {
+  if (typeof itemId !== 'string' || itemId.trim() === '') {
+    return { ok: false, errors: { id: 'הפריט לא נמצא' }, item: null }
+  }
+
+  if (!Number.isInteger(ingredientIndex) || ingredientIndex < 0) {
+    return {
+      ok: false,
+      errors: { ingredientIndex: 'מרכיב לא תקין' },
+      item: null,
+    }
+  }
+
+  const quantity = parseNumber(quantityGrams)
+  if (!isPositiveQuantity(quantity)) {
+    return {
+      ok: false,
+      errors: { quantityGrams: 'הכמות חייבת להיות גדולה מאפס' },
+      item: null,
+    }
+  }
+
+  const planner = getTodayPlanner()
+  const index = planner.findIndex((item) => item.id === itemId)
+  if (index === -1) {
+    return { ok: false, errors: { id: 'הפריט לא נמצא' }, item: null }
+  }
+
+  const item = planner[index]
+  if (!item.ingredients[ingredientIndex]) {
+    return {
+      ok: false,
+      errors: { ingredientIndex: 'מרכיב לא תקין' },
+      item: null,
+    }
+  }
+
+  // Replace ingredient object so callers cannot retain a shared reference
+  // to pre-update state, and never touch meal storage.
+  const nextIngredients = item.ingredients.map((ingredient, i) => {
+    if (i !== ingredientIndex) {
+      return { ...ingredient }
+    }
+    return {
+      ...ingredient,
+      quantityGrams: quantity,
+    }
+  })
+
+  const nextItem = {
+    ...item,
+    ingredients: nextIngredients,
+  }
+
+  planner[index] = nextItem
+  saveTodayPlanner(planner)
+
+  return { ok: true, errors: {}, item: nextItem }
+}
+
+export function removeTodayItem(itemId) {
+  if (typeof itemId !== 'string' || itemId.trim() === '') {
+    return false
+  }
+
+  const planner = getTodayPlanner()
+  const next = planner.filter((item) => item.id !== itemId)
+
+  if (next.length === planner.length) {
+    return false
+  }
+
+  saveTodayPlanner(next)
+  return true
 }
