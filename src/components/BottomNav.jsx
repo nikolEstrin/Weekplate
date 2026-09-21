@@ -1,7 +1,7 @@
 const NAV_ITEMS = [
   {
     id: 'today',
-    label: 'Today',
+    label: 'היום',
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <rect x="5" y="3" width="14" height="18" rx="2" />
@@ -11,7 +11,7 @@ const NAV_ITEMS = [
   },
   {
     id: 'meals',
-    label: 'Meals',
+    label: 'ארוחות',
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <ellipse cx="12" cy="8" rx="7" ry="3" />
@@ -22,7 +22,7 @@ const NAV_ITEMS = [
   },
   {
     id: 'products',
-    label: 'Products',
+    label: 'מוצרים',
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M6 8h12l-1 12H7L6 8z" />
@@ -32,7 +32,7 @@ const NAV_ITEMS = [
   },
   {
     id: 'settings',
-    label: 'Settings',
+    label: 'הגדרות',
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="12" cy="12" r="3" />
@@ -44,7 +44,7 @@ const NAV_ITEMS = [
 
 function BottomNav({ currentPage, onNavigate }) {
   return (
-    <nav className="bottom-nav" aria-label="Main">
+    <nav className="bottom-nav" aria-label="ניווט ראשי">
       {NAV_ITEMS.map((item) => {
         const isActive = currentPage === item.id
 

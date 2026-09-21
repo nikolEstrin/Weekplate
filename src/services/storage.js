@@ -1,5 +1,5 @@
-const PRODUCTS_KEY = 'weekplate.products'
-const GOALS_KEY = 'weekplate.goals'
+const PRODUCTS_KEY = 'weekplate_products'
+const GOALS_KEY = 'weekplate_goals'
 
 const NUTRITION_FIELDS = [
   'caloriesPer100g',
@@ -11,10 +11,10 @@ const NUTRITION_FIELDS = [
 const GOAL_FIELDS = ['calories', 'protein', 'carbs', 'fat']
 
 const DEFAULT_GOALS = {
-  calories: 2000,
-  protein: 150,
-  carbs: 200,
-  fat: 65,
+  calories: 1500,
+  protein: 110,
+  carbs: 150,
+  fat: 50,
 }
 
 function createId() {
@@ -47,18 +47,18 @@ export function validateProduct(input) {
 
   const name = typeof source.name === 'string' ? source.name.trim() : ''
   if (!name) {
-    errors.name = 'Name is required'
+    errors.name = 'יש להזין שם מוצר'
   }
 
   const nutrition = {}
   for (const field of NUTRITION_FIELDS) {
     const value = parseNumber(source[field])
     if (!Number.isFinite(value)) {
-      errors[field] = 'Must be a valid number'
+      errors[field] = 'יש להזין מספר תקין'
       continue
     }
     if (value < 0) {
-      errors[field] = 'Cannot be negative'
+      errors[field] = 'הערך לא יכול להיות שלילי'
       continue
     }
     nutrition[field] = value
@@ -156,13 +156,13 @@ export function addProduct(input) {
 
 export function updateProduct(id, input) {
   if (typeof id !== 'string' || id.trim() === '') {
-    return { ok: false, errors: { id: 'Product not found' }, product: null }
+    return { ok: false, errors: { id: 'המוצר לא נמצא' }, product: null }
   }
 
   const products = getProducts()
   const index = products.findIndex((product) => product.id === id)
   if (index === -1) {
-    return { ok: false, errors: { id: 'Product not found' }, product: null }
+    return { ok: false, errors: { id: 'המוצר לא נמצא' }, product: null }
   }
 
   const result = validateProduct(input)
@@ -201,11 +201,11 @@ export function validateGoals(input) {
   for (const field of GOAL_FIELDS) {
     const value = parseNumber(source[field])
     if (!Number.isFinite(value)) {
-      errors[field] = 'Must be a valid number'
+      errors[field] = 'יש להזין מספר תקין'
       continue
     }
     if (value < 0) {
-      errors[field] = 'Cannot be negative'
+      errors[field] = 'הערך לא יכול להיות שלילי'
       continue
     }
     goals[field] = value

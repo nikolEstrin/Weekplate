@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { getGoals, saveGoals } from '../services/storage.js'
 
 const GOAL_FIELDS = [
-  { name: 'calories', label: 'Calories (kcal)', id: 'goal-calories' },
-  { name: 'protein', label: 'Protein (g)', id: 'goal-protein' },
-  { name: 'carbs', label: 'Carbs (g)', id: 'goal-carbs' },
-  { name: 'fat', label: 'Fat (g)', id: 'goal-fat' },
+  { name: 'calories', label: 'קלוריות', id: 'goal-calories' },
+  { name: 'protein', label: 'חלבון', id: 'goal-protein' },
+  { name: 'carbs', label: 'פחמימות', id: 'goal-carbs' },
+  { name: 'fat', label: 'שומן', id: 'goal-fat' },
 ]
 
 function goalsToForm(goals) {
@@ -17,7 +17,7 @@ function goalsToForm(goals) {
   }
 }
 
-function Settings() {
+function SettingsPage() {
   const [form, setForm] = useState(() => goalsToForm(getGoals()))
   const [errors, setErrors] = useState({})
   const [saved, setSaved] = useState(false)
@@ -46,11 +46,11 @@ function Settings() {
   return (
     <section className="page">
       <header className="page-header">
-        <h1>Settings</h1>
+        <h1>הגדרות</h1>
       </header>
 
-      <form className="goals-form" onSubmit={handleSubmit}>
-        <p className="goals-form__hint">Daily nutrition targets</p>
+      <form className="goals-form" onSubmit={handleSubmit} noValidate>
+        <h2 className="goals-form__title">יעדים יומיים</h2>
 
         {GOAL_FIELDS.map((field) => (
           <div className="product-field" key={field.name}>
@@ -62,6 +62,7 @@ function Settings() {
               inputMode="decimal"
               min="0"
               step="any"
+              className="input-ltr"
               value={form[field.name]}
               onChange={handleChange}
               aria-invalid={errors[field.name] ? 'true' : 'false'}
@@ -73,13 +74,13 @@ function Settings() {
         ))}
 
         <button type="submit" className="goals-form__save">
-          Save
+          שמירת יעדים
         </button>
 
-        {saved ? <p className="goals-form__status">Goals saved.</p> : null}
+        {saved ? <p className="goals-form__status">היעדים נשמרו.</p> : null}
       </form>
     </section>
   )
 }
 
-export default Settings
+export default SettingsPage

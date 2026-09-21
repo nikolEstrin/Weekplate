@@ -6,10 +6,13 @@
   --color-border: #e5e7eb;
   --color-accent: #2f7d4a;
   --color-accent-soft: #e8f5ec;
+  --color-protein: #3b82f6;
+  --color-carbs: #f59e0b;
+  --color-fat: #eab308;
   --nav-height: 64px;
   --app-max-width: 430px;
 
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Segoe UI', Tahoma, 'Noto Sans Hebrew', Arial, sans-serif;
   line-height: 1.45;
   font-weight: 400;
   color: var(--color-text);
@@ -24,6 +27,10 @@
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+html {
+  direction: rtl;
 }
 
 body {
@@ -42,15 +49,31 @@ button {
   cursor: pointer;
 }
 
-h1 {
+h1,
+h2 {
   margin: 0;
+  color: var(--color-text);
+}
+
+h1 {
   font-size: 1.5rem;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--color-text);
 }
 
 p {
   margin: 0;
   color: var(--color-text-muted);
+}
+
+.num {
+  direction: ltr;
+  unicode-bidi: isolate;
+  display: inline-block;
+}
+
+.input-ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+  text-align: right;
 }

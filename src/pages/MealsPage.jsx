@@ -1,14 +1,14 @@
-function Meals() {
+function MealsPage() {
   return (
     <section className="page">
       <header className="page-header">
-        <h1>Meals</h1>
+        <h1>ארוחות</h1>
       </header>
       <div className="placeholder-card">
-        <p>Saved meals will go here.</p>
+        <p>ארוחות שמורות יופיעו כאן בהמשך.</p>
       </div>
     </section>
   )
 }
 
-export default Meals
+export default MealsPage

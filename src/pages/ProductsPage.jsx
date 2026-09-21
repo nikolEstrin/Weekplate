@@ -9,21 +9,25 @@ import { roundForDisplay } from '../utils/nutrition.js'
 
 const EMPTY_FORM = {
   name: '',
-  caloriesPer100g: '0',
-  proteinPer100g: '0',
-  carbsPer100g: '0',
-  fatPer100g: '0',
+  caloriesPer100g: '',
+  proteinPer100g: '',
+  carbsPer100g: '',
+  fatPer100g: '',
 }
 
 const NUTRITION_FIELDS = [
-  { name: 'caloriesPer100g', label: 'Calories (kcal)', id: 'product-calories' },
-  { name: 'proteinPer100g', label: 'Protein (g)', id: 'product-protein' },
-  { name: 'carbsPer100g', label: 'Carbs (g)', id: 'product-carbs' },
-  { name: 'fatPer100g', label: 'Fat (g)', id: 'product-fat' },
+  { name: 'caloriesPer100g', label: 'קלוריות', id: 'product-calories' },
+  { name: 'proteinPer100g', label: 'חלבון', id: 'product-protein' },
+  { name: 'carbsPer100g', label: 'פחמימות', id: 'product-carbs' },
+  { name: 'fatPer100g', label: 'שומן', id: 'product-fat' },
 ]
 
+function formatCalories(value) {
+  return String(roundForDisplay(value, value % 1 === 0 ? 0 : 1))
+}
+
 function formatMacro(value) {
-  return String(roundForDisplay(value, 1))
+  return String(roundForDisplay(value, value % 1 === 0 ? 0 : 1))
 }
 
 function productToForm(product) {
@@ -36,7 +40,7 @@ function productToForm(product) {
   }
 }
 
-function Products() {
+function ProductsPage() {
   const [products, setProducts] = useState(() => getProducts())
   const [query, setQuery] = useState('')
   const [view, setView] = useState('list')
@@ -95,7 +99,7 @@ function Products() {
       return
     }
 
-    const confirmed = window.confirm('Delete this product?')
+    const confirmed = window.confirm('למחוק את המוצר?')
     if (!confirmed) {
       return
     }
@@ -123,15 +127,15 @@ function Products() {
               type="button"
               className="product-form__close"
               onClick={closeForm}
-              aria-label="Close"
+              aria-label="ביטול"
             >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M6 6l12 12M18 6L6 18" />
               </svg>
             </button>
-            <h1>{isEdit ? 'Edit Product' : 'Add Product'}</h1>
+            <h1>{isEdit ? 'עריכת מוצר' : 'הוספת מוצר'}</h1>
             <button type="submit" className="product-form__save">
-              Save
+              שמירה
             </button>
           </header>
 
@@ -140,14 +144,14 @@ function Products() {
           ) : null}
 
           <div className="product-field">
-            <label htmlFor="product-name">Name</label>
+            <label htmlFor="product-name">שם המוצר</label>
             <input
               id="product-name"
               name="name"
               type="text"
               value={form.name}
               onChange={handleChange}
-              placeholder="e.g. Chicken Breast"
+              placeholder="לדוגמה: חזה עוף"
               autoComplete="off"
               aria-invalid={Boolean(errors.name)}
               aria-describedby={errors.name ? 'product-name-error' : undefined}
@@ -159,7 +163,7 @@ function Products() {
             ) : null}
           </div>
 
-          <h2 className="product-form__section">Nutrition values (per 100g)</h2>
+          <h2 className="product-form__section">ערכים תזונתיים ל־100 גרם</h2>
 
           {NUTRITION_FIELDS.map((field) => {
             const error = errors[field.name]
@@ -175,6 +179,7 @@ function Products() {
                   inputMode="decimal"
                   min="0"
                   step="any"
+                  className="input-ltr"
                   value={form[field.name]}
                   onChange={handleChange}
                   aria-invalid={Boolean(error)}
@@ -189,13 +194,22 @@ function Products() {
             )
           })}
 
+          <div className="product-form__actions">
+            <button type="submit" className="btn-primary">
+              שמירה
+            </button>
+            <button type="button" className="btn-secondary" onClick={closeForm}>
+              ביטול
+            </button>
+          </div>
+
           {isEdit ? (
             <button
               type="button"
               className="product-form__delete"
               onClick={handleDelete}
             >
-              Delete product
+              מחיקת מוצר
             </button>
           ) : null}
         </form>
@@ -206,28 +220,34 @@ function Products() {
   return (
     <section className="page">
       <header className="products-header">
-        <h1>Products</h1>
+        <h1>מוצרים</h1>
         <button type="button" className="products-add" onClick={openAdd}>
           <span aria-hidden="true">+</span>
-          Add Product
+          הוספת מוצר
         </button>
       </header>
 
-      <input
-        type="search"
-        className="products-search"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder="Search products..."
-        aria-label="Search products"
-      />
+      <div className="products-search-wrap">
+        <svg className="products-search__icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" />
+          <path d="M20 20l-3.5-3.5" />
+        </svg>
+        <input
+          type="search"
+          className="products-search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="חיפוש מוצרים..."
+          aria-label="חיפוש מוצרים"
+        />
+      </div>
 
       {visibleProducts.length === 0 ? (
         <div className="products-empty">
           <p>
             {products.length === 0
-              ? 'No products yet. Add your first product.'
-              : 'No products match your search.'}
+              ? 'עדיין אין מוצרים. הוסיפו את המוצר הראשון.'
+              : 'לא נמצאו מוצרים התואמים לחיפוש.'}
           </p>
         </div>
       ) : (
@@ -241,10 +261,21 @@ function Products() {
               >
                 <span className="product-card__name">{product.name}</span>
                 <span className="product-card__nutrition">
-                  {roundForDisplay(product.caloriesPer100g, 0)} kcal ·{' '}
-                  {formatMacro(product.proteinPer100g)}g P ·{' '}
-                  {formatMacro(product.carbsPer100g)}g C ·{' '}
-                  {formatMacro(product.fatPer100g)}g F per 100g
+                  <span className="num">
+                    {formatCalories(product.caloriesPer100g)} קל׳
+                  </span>
+                  {' · '}
+                  <span className="num">
+                    {formatMacro(product.proteinPer100g)} גרם חלבון
+                  </span>
+                  {' · '}
+                  <span className="num">
+                    {formatMacro(product.carbsPer100g)} גרם פחמימות
+                  </span>
+                  {' · '}
+                  <span className="num">
+                    {formatMacro(product.fatPer100g)} גרם שומן
+                  </span>
                 </span>
               </button>
             </li>
@@ -255,4 +286,4 @@ function Products() {
   )
 }
 
-export default Products
+export default ProductsPage

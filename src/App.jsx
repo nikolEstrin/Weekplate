@@ -1,16 +1,16 @@
 import { useState } from 'react'
 import BottomNav from './components/BottomNav.jsx'
-import Today from './pages/Today.jsx'
-import Meals from './pages/Meals.jsx'
-import Products from './pages/Products.jsx'
-import Settings from './pages/Settings.jsx'
+import TodayPage from './pages/TodayPage.jsx'
+import MealsPage from './pages/MealsPage.jsx'
+import ProductsPage from './pages/ProductsPage.jsx'
+import SettingsPage from './pages/SettingsPage.jsx'
 import './App.css'
 
 const PAGES = {
-  today: Today,
-  meals: Meals,
-  products: Products,
-  settings: Settings,
+  today: TodayPage,
+  meals: MealsPage,
+  products: ProductsPage,
+  settings: SettingsPage,
 }
 
 function App() {
