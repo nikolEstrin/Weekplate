@@ -3,6 +3,8 @@
   width: 100%;
   max-width: var(--app-max-width);
   min-height: 100svh;
+  height: 100svh;
+  max-height: 100svh;
   background:
     radial-gradient(ellipse 120% 60% at 100% 0%, rgba(184, 232, 212, 0.35), transparent 55%),
     radial-gradient(ellipse 90% 50% at 0% 20%, rgba(255, 201, 168, 0.22), transparent 50%),
@@ -12,6 +14,7 @@
   position: relative;
   box-shadow: var(--shadow-float);
   overflow-x: hidden;
+  overflow-y: hidden;
 }
 
 .app-content {
@@ -754,8 +757,8 @@
 
 .meal-chip {
   flex: 0 0 auto;
-  min-height: 36px;
-  padding: 6px 14px;
+  min-height: 44px;
+  padding: 8px 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   background: var(--color-surface);
@@ -880,8 +883,8 @@
 }
 
 .meal-card__action {
-  min-height: 36px;
-  padding: 6px 10px;
+  min-height: 44px;
+  padding: 8px 12px;
   border: none;
   border-radius: var(--radius-sm);
   background: var(--color-accent-soft);
@@ -935,7 +938,7 @@
   font-size: 0.9rem;
   font-weight: var(--font-weight-semibold);
   padding: 8px 12px;
-  min-height: 40px;
+  min-height: 44px;
   border-radius: var(--radius-pill);
 }
 
@@ -1063,8 +1066,8 @@
 
 .meal-ingredient-row__remove {
   flex-shrink: 0;
-  width: 40px;
-  min-height: 40px;
+  width: 44px;
+  min-height: 44px;
   border: none;
   border-radius: var(--radius-sm);
   background: var(--color-danger-bg);
@@ -1160,7 +1163,7 @@
   align-items: center;
   justify-content: center;
   gap: 4px;
-  min-height: 40px;
+  min-height: 44px;
   padding: 8px 14px;
   border: none;
   border-radius: var(--radius-pill);
@@ -1235,8 +1238,8 @@
 
 .today-item-card__delete {
   flex-shrink: 0;
-  min-height: 36px;
-  padding: 6px 10px;
+  min-height: 44px;
+  padding: 8px 12px;
   border: none;
   border-radius: var(--radius-sm);
   background: var(--color-danger-bg);
@@ -1292,7 +1295,7 @@
 
 .today-ingredient-row__qty-input {
   width: 64px;
-  min-height: 40px;
+  min-height: 44px;
   padding: 8px 6px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -1463,7 +1466,7 @@
 
 .today-product-qty__input {
   width: 72px;
-  min-height: 40px;
+  min-height: 44px;
   padding: 8px 6px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -1504,7 +1507,7 @@
 
 .today-product-qty__unit-select {
   max-width: 110px;
-  min-height: 40px;
+  min-height: 44px;
   padding: 8px 6px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -1549,8 +1552,8 @@
 }
 
 .meal-multiplier__step {
-  width: 40px;
-  min-height: 40px;
+  width: 44px;
+  min-height: 44px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
@@ -1563,7 +1566,7 @@
 
 .meal-multiplier__input {
   width: 72px;
-  min-height: 40px;
+  min-height: 44px;
   padding: 8px 6px;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
@@ -1594,7 +1597,7 @@
 
 .today-item-card__expand {
   margin-top: 4px;
-  min-height: 40px;
+  min-height: 44px;
   padding: 8px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
@@ -1668,8 +1671,8 @@
 
 .product-units__edit,
 .product-units__remove {
-  min-height: 40px;
-  padding: 6px 10px;
+  min-height: 44px;
+  padding: 8px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
@@ -1732,7 +1735,7 @@
 .week-selector__nav,
 .week-selector__calendar-btn,
 .week-selector__today-btn {
-  min-height: 40px;
+  min-height: 44px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
   background: var(--color-surface-muted);
@@ -1743,7 +1746,7 @@
 }
 
 .week-selector__nav {
-  width: 40px;
+  width: 44px;
   padding: 0;
   font-size: 1.25rem;
   line-height: 1;
@@ -1871,8 +1874,8 @@
 }
 
 .slot-section__add {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border: none;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.75);
