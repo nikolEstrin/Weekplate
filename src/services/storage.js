@@ -1,9 +1,17 @@
+import {
+  GRAMS_UNIT,
+  UNIT_NAME_SUGGESTIONS,
+  quantityToGrams,
+} from '../utils/units.js'
+
 const PRODUCTS_KEY = 'weekplate_products'
 const MEALS_KEY = 'weekplate_meals'
 const GOALS_KEY = 'weekplate_goals'
 const PLANS_KEY = 'weekplate_plans'
 const TODAY_KEY = 'weekplate_today'
 const MIGRATIONS_KEY = 'weekplate_migrations'
+
+export { GRAMS_UNIT, UNIT_NAME_SUGGESTIONS, quantityToGrams }
 
 const NUTRITION_FIELDS = [
   'caloriesPer100g',
@@ -213,6 +221,45 @@ function deriveMealTags(source) {
   return null
 }
 
+/**
+ * Normalize product.units: drop invalid entries; absent/non-array → [].
+ * Does not fail the product — bad units are skipped.
+ */
+function normalizeProductUnits(rawUnits) {
+  if (!Array.isArray(rawUnits)) {
+    return []
+  }
+
+  const units = []
+  const seenIds = new Set()
+
+  for (const entry of rawUnits) {
+    if (!entry || typeof entry !== 'object') {
+      continue
+    }
+
+    const name = typeof entry.name === 'string' ? entry.name.trim() : ''
+    if (!name) {
+      continue
+    }
+
+    const grams = parseNumber(entry.grams)
+    if (!Number.isFinite(grams) || grams <= 0) {
+      continue
+    }
+
+    let id = typeof entry.id === 'string' ? entry.id.trim() : ''
+    if (!id || seenIds.has(id)) {
+      id = createId()
+    }
+
+    seenIds.add(id)
+    units.push({ id, name, grams })
+  }
+
+  return units
+}
+
 export function validateProduct(input) {
   const errors = {}
   const source = input && typeof input === 'object' ? input : {}
@@ -236,6 +283,9 @@ export function validateProduct(input) {
     nutrition[field] = value
   }
 
+  // Absent units → []; invalid unit entries are dropped (product still ok).
+  const units = normalizeProductUnits(source.units)
+
   if (Object.keys(errors).length > 0) {
     return { ok: false, errors, product: null }
   }
@@ -249,6 +299,7 @@ export function validateProduct(input) {
       proteinPer100g: nutrition.proteinPer100g,
       carbsPer100g: nutrition.carbsPer100g,
       fatPer100g: nutrition.fatPer100g,
+      units,
     },
   }
 }
@@ -345,6 +396,14 @@ export function updateProduct(id, input) {
   const product = {
     id,
     ...result.product,
+  }
+
+  // Thin shim: Products UI may omit units — preserve existing until units UI exists.
+  const source = input && typeof input === 'object' ? input : {}
+  if (!Object.prototype.hasOwnProperty.call(source, 'units')) {
+    product.units = Array.isArray(products[index].units)
+      ? products[index].units
+      : []
   }
 
   products[index] = product
@@ -477,10 +536,14 @@ export function validateMeal(input, products) {
         hasIngredientErrors = true
         ingredientErrors[index] = itemErrors
       } else {
-        ingredients.push({
+        // Grams are canonical. Optional unit* fields are UI convenience only
+        // (frozen at entry — never re-resolved from live product units).
+        const ingredient = {
           productId,
           quantityGrams,
-        })
+        }
+        attachUnitMetadata(ingredient, entry)
+        ingredients.push(ingredient)
       }
     }
 
@@ -770,6 +833,83 @@ function findProductById(products, productId) {
   )
 }
 
+/**
+ * Copy optional unit metadata for UI only. Nutrition always uses quantityGrams.
+ * Never re-resolve these from live product.units later.
+ */
+function attachUnitMetadata(target, source) {
+  if (!target || !source || typeof source !== 'object') {
+    return target
+  }
+
+  if (typeof source.unitId === 'string' && source.unitId.trim() !== '') {
+    target.unitId = source.unitId.trim()
+  }
+  if (typeof source.unitName === 'string' && source.unitName.trim() !== '') {
+    target.unitName = source.unitName.trim()
+  }
+  const unitGrams = parseNumber(source.unitGrams)
+  if (Number.isFinite(unitGrams) && unitGrams > 0) {
+    target.unitGrams = unitGrams
+  }
+
+  return target
+}
+
+function cloneIngredient(ingredient) {
+  if (!ingredient || typeof ingredient !== 'object') {
+    return null
+  }
+  return { ...ingredient }
+}
+
+function cloneIngredients(ingredients) {
+  if (!Array.isArray(ingredients)) {
+    return []
+  }
+  return ingredients.map((ingredient) => cloneIngredient(ingredient)).filter(Boolean)
+}
+
+function parseMealMultiplier(value) {
+  const multiplier = parseNumber(value)
+  if (!Number.isFinite(multiplier) || multiplier <= 0) {
+    return 1
+  }
+  return multiplier
+}
+
+/**
+ * Effective ingredients = scale each baseIngredients[i].quantityGrams by multiplier.
+ * Always scale from base — never multiply already-scaled current ingredients.
+ */
+function scaleIngredientsFromBase(baseIngredients, multiplier, currentIngredients) {
+  const base = Array.isArray(baseIngredients) ? baseIngredients : []
+  const current = Array.isArray(currentIngredients) ? currentIngredients : []
+  const scaled = []
+
+  for (let i = 0; i < base.length; i += 1) {
+    const baseIng = base[i]
+    if (!baseIng || typeof baseIng !== 'object') {
+      continue
+    }
+    const baseQty = parseNumber(baseIng.quantityGrams)
+    if (!isPositiveQuantity(baseQty)) {
+      continue
+    }
+
+    const currentIng =
+      current[i] && typeof current[i] === 'object' ? current[i] : null
+    const next = {
+      ...(currentIng || {}),
+      ...baseIng,
+      quantityGrams: baseQty * multiplier,
+    }
+    scaled.push(next)
+  }
+
+  return scaled
+}
+
 function snapshotIngredient(ingredient, products) {
   const source = ingredient && typeof ingredient === 'object' ? ingredient : {}
   const productId =
@@ -803,6 +943,9 @@ function snapshotIngredient(ingredient, products) {
       }
     }
   }
+
+  // Freeze unit metadata at entry time for UI; grams remain canonical.
+  attachUnitMetadata(snapshot, source)
 
   return snapshot
 }
@@ -838,6 +981,8 @@ function normalizePlannerIngredient(ingredient) {
       normalized[field] = value
     }
   }
+
+  attachUnitMetadata(normalized, ingredient)
 
   return normalized
 }
@@ -888,6 +1033,26 @@ function normalizePlannerItem(item) {
     }
     if (typeof item.sourceMealId === 'string' && item.sourceMealId.trim() !== '') {
       planned.sourceMealId = item.sourceMealId.trim()
+    }
+
+    const mealMultiplier = parseMealMultiplier(item.mealMultiplier)
+    planned.mealMultiplier = mealMultiplier
+
+    // Old items without baseIngredients: treat current ingredients as the local base.
+    // Do not re-scale stored effective quantities on read.
+    const rawBase = Array.isArray(item.baseIngredients) ? item.baseIngredients : null
+    if (rawBase && rawBase.length > 0) {
+      const baseIngredients = []
+      for (const ingredient of rawBase) {
+        const normalized = normalizePlannerIngredient(ingredient)
+        if (normalized) {
+          baseIngredients.push(normalized)
+        }
+      }
+      planned.baseIngredients =
+        baseIngredients.length > 0 ? baseIngredients : cloneIngredients(ingredients)
+    } else {
+      planned.baseIngredients = cloneIngredients(ingredients)
     }
   }
 
@@ -1129,6 +1294,8 @@ function normalizeSlotId(slot) {
 
 /**
  * Deep-clones a saved meal into a planner snapshot (does not persist).
+ * Sets baseIngredients (recipe grams) + mealMultiplier: 1; ingredients equal base.
+ * Saved meals themselves never carry mealMultiplier.
  */
 export function createMealSnapshot(meal, products) {
   const source = meal && typeof meal === 'object' ? meal : null
@@ -1160,11 +1327,15 @@ export function createMealSnapshot(meal, products) {
     }
   }
 
+  const baseIngredients = cloneIngredients(ingredients)
+
   const item = {
     id: createId(),
     type: 'meal',
     name,
-    ingredients,
+    baseIngredients,
+    mealMultiplier: 1,
+    ingredients: cloneIngredients(baseIngredients),
   }
 
   const tags = deriveMealTags(source)
@@ -1515,6 +1686,110 @@ export function updatePlannerItemQuantity(
   const nextItem = {
     ...item,
     ingredients: nextIngredients,
+  }
+
+  // Ingredient override (local to this planned instance only):
+  // Update effective quantity AND fold it into baseIngredients as
+  // quantityGrams / mealMultiplier so later multiplier changes still
+  // scale from this new local base (never multiply already-scaled values).
+  if (item.type === 'meal') {
+    const mealMultiplier = parseMealMultiplier(item.mealMultiplier)
+    nextItem.mealMultiplier = mealMultiplier
+
+    const existingBase = Array.isArray(item.baseIngredients)
+      ? item.baseIngredients
+      : cloneIngredients(item.ingredients)
+    const baseIngredients = existingBase.map((ingredient, i) => {
+      const cloned = { ...ingredient }
+      if (i === ingredientIndex) {
+        cloned.quantityGrams = quantity / mealMultiplier
+      }
+      return cloned
+    })
+
+    // Ensure base row exists if ingredients grew somehow (should not).
+    if (!baseIngredients[ingredientIndex] && nextIngredients[ingredientIndex]) {
+      baseIngredients[ingredientIndex] = {
+        ...nextIngredients[ingredientIndex],
+        quantityGrams: quantity / mealMultiplier,
+      }
+    }
+
+    nextItem.baseIngredients = baseIngredients
+  }
+
+  if (location.kind === 'slot') {
+    plan[location.slot] = nextItem
+  } else {
+    plan.snacks[location.snackIndex] = nextItem
+  }
+
+  saveDayPlan(key, plan)
+  return { ok: true, errors: {}, item: nextItem }
+}
+
+/**
+ * Set mealMultiplier on a planned meal instance and recompute effective
+ * ingredient grams from baseIngredients (original recipe quantities).
+ * Never multiplies already-scaled current ingredients.
+ */
+export function updatePlannerMealMultiplier(dateKey, itemId, multiplier) {
+  ensureMigrations()
+
+  if (typeof itemId !== 'string' || itemId.trim() === '') {
+    return { ok: false, errors: { id: 'הפריט לא נמצא' }, item: null }
+  }
+
+  const nextMultiplier = parseNumber(multiplier)
+  if (!Number.isFinite(nextMultiplier) || nextMultiplier <= 0) {
+    return {
+      ok: false,
+      errors: { mealMultiplier: 'המכפיל חייב להיות גדול מאפס' },
+      item: null,
+    }
+  }
+
+  const key = ensureDayExists(dateKey)
+  const plan = getDayPlan(key)
+  const location = findPlannerItemLocation(plan, itemId)
+  if (!location) {
+    return { ok: false, errors: { id: 'הפריט לא נמצא' }, item: null }
+  }
+
+  const item =
+    location.kind === 'slot'
+      ? plan[location.slot]
+      : plan.snacks[location.snackIndex]
+
+  if (!item || item.type !== 'meal') {
+    return {
+      ok: false,
+      errors: { type: 'מכפיל זמין רק לארוחות מתוכננות' },
+      item: null,
+    }
+  }
+
+  const baseIngredients = Array.isArray(item.baseIngredients)
+    ? cloneIngredients(item.baseIngredients)
+    : cloneIngredients(item.ingredients)
+
+  if (baseIngredients.length === 0) {
+    return {
+      ok: false,
+      errors: { ingredients: 'אין מרכיבי בסיס' },
+      item: null,
+    }
+  }
+
+  const nextItem = {
+    ...item,
+    mealMultiplier: nextMultiplier,
+    baseIngredients,
+    ingredients: scaleIngredientsFromBase(
+      baseIngredients,
+      nextMultiplier,
+      item.ingredients,
+    ),
   }
 
   if (location.kind === 'slot') {

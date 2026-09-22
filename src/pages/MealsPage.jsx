@@ -4,7 +4,9 @@ import {
   deleteMeal,
   getMeals,
   getProducts,
+  GRAMS_UNIT,
   MEAL_TAG_OPTIONS,
+  quantityToGrams,
   updateMeal,
 } from '../services/storage.js'
 import {
@@ -24,7 +26,11 @@ const TAG_LABELS = Object.fromEntries(
   MEAL_TAGS.map((tag) => [tag.id, tag.label]),
 )
 
-const EMPTY_INGREDIENT = { productId: '', quantityGrams: '' }
+const EMPTY_INGREDIENT = {
+  productId: '',
+  quantity: '',
+  unitId: GRAMS_UNIT.id,
+}
 
 const EMPTY_FORM = {
   name: '',
@@ -55,7 +61,49 @@ function mealHasTag(meal, tagId) {
   return mealTagsList(meal).includes(tagId)
 }
 
-function mealToForm(meal) {
+function getProductUnits(product) {
+  const custom = Array.isArray(product?.units) ? product.units : []
+  return [GRAMS_UNIT, ...custom]
+}
+
+function resolveUnit(product, unitId) {
+  const units = getProductUnits(product)
+  return units.find((unit) => unit.id === unitId) || GRAMS_UNIT
+}
+
+function ingredientToForm(item, productsById) {
+  const product = productsById.get(item.productId)
+  const storedUnitId =
+    typeof item.unitId === 'string' ? item.unitId.trim() : ''
+  const hasCustomUnit =
+    storedUnitId !== '' && storedUnitId !== GRAMS_UNIT.id
+
+  // Prefer live product.units for qty↔grams so open→save without edits
+  // keeps quantityGrams stable if unit grams were later changed on the product.
+  // If the unit was removed, fall back to showing grams.
+  if (hasCustomUnit) {
+    const unitStillExists = getProductUnits(product).some(
+      (unit) => unit.id === storedUnitId,
+    )
+    if (unitStillExists) {
+      const liveUnit = resolveUnit(product, storedUnitId)
+      const quantity = item.quantityGrams / liveUnit.grams
+      return {
+        productId: item.productId,
+        quantity: String(quantity),
+        unitId: storedUnitId,
+      }
+    }
+  }
+
+  return {
+    productId: item.productId,
+    quantity: String(item.quantityGrams),
+    unitId: GRAMS_UNIT.id,
+  }
+}
+
+function mealToForm(meal, productsById) {
   const tags = mealTagsList(meal).filter((tag) =>
     MEAL_TAG_OPTIONS.includes(tag),
   )
@@ -64,10 +112,7 @@ function mealToForm(meal) {
     tags: tags.length > 0 ? tags : ['breakfast'],
     ingredients:
       Array.isArray(meal.ingredients) && meal.ingredients.length > 0
-        ? meal.ingredients.map((item) => ({
-            productId: item.productId,
-            quantityGrams: String(item.quantityGrams),
-          }))
+        ? meal.ingredients.map((item) => ingredientToForm(item, productsById))
         : [{ ...EMPTY_INGREDIENT }],
   }
 }
@@ -79,8 +124,27 @@ function formatTagList(tags) {
     .join(' · ')
 }
 
+function buildIngredientPayload(item, productsById) {
+  const product = productsById.get(item.productId)
+  const unit = resolveUnit(product, item.unitId)
+  const quantityGrams = quantityToGrams(item.quantity, unit.grams)
+
+  const payload = {
+    productId: item.productId,
+    quantityGrams,
+  }
+
+  if (unit.id !== GRAMS_UNIT.id) {
+    payload.unitId = unit.id
+    payload.unitName = unit.name
+    payload.unitGrams = unit.grams
+  }
+
+  return payload
+}
+
 function MealsPage() {
-  const [products] = useState(() => getProducts())
+  const [products, setProducts] = useState(() => getProducts())
   const [meals, setMeals] = useState(() => getMeals())
   const [query, setQuery] = useState('')
   const [tagFilter, setTagFilter] = useState('all')
@@ -89,11 +153,19 @@ function MealsPage() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [errors, setErrors] = useState({})
 
+  const productsById = new Map(products.map((product) => [product.id, product]))
+
   function refreshMeals() {
     setMeals(getMeals())
   }
 
+  /** Reload products so units added while editing an existing product appear here. */
+  function refreshProducts() {
+    setProducts(getProducts())
+  }
+
   function openAdd() {
+    refreshProducts()
     setEditingId(null)
     setForm({
       name: '',
@@ -105,8 +177,13 @@ function MealsPage() {
   }
 
   function openEdit(meal) {
+    const latestProducts = getProducts()
+    setProducts(latestProducts)
+    const latestById = new Map(
+      latestProducts.map((product) => [product.id, product]),
+    )
     setEditingId(meal.id)
-    setForm(mealToForm(meal))
+    setForm(mealToForm(meal, latestById))
     setErrors({})
     setView('form')
   }
@@ -151,9 +228,19 @@ function MealsPage() {
   function handleIngredientChange(index, field, value) {
     setForm((current) => ({
       ...current,
-      ingredients: current.ingredients.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, [field]: value } : item,
-      ),
+      ingredients: current.ingredients.map((item, itemIndex) => {
+        if (itemIndex !== index) {
+          return item
+        }
+        if (field === 'productId') {
+          return {
+            ...item,
+            productId: value,
+            unitId: GRAMS_UNIT.id,
+          }
+        }
+        return { ...item, [field]: value }
+      }),
     }))
   }
 
@@ -175,10 +262,9 @@ function MealsPage() {
     const payload = {
       name: form.name,
       tags: form.tags,
-      ingredients: form.ingredients.map((item) => ({
-        productId: item.productId,
-        quantityGrams: item.quantityGrams,
-      })),
+      ingredients: form.ingredients.map((item) =>
+        buildIngredientPayload(item, productsById),
+      ),
     }
 
     const result = editingId
@@ -210,10 +296,9 @@ function MealsPage() {
 
   const liveNutrition = calculateMealNutrition(
     {
-      ingredients: form.ingredients.map((item) => ({
-        productId: item.productId,
-        quantityGrams: item.quantityGrams,
-      })),
+      ingredients: form.ingredients.map((item) =>
+        buildIngredientPayload(item, productsById),
+      ),
     },
     products,
   )
@@ -339,11 +424,16 @@ function MealsPage() {
                 const itemErrors = ingredientErrors[index] || {}
                 const productErrorId = `meal-ingredient-product-${index}-error`
                 const quantityErrorId = `meal-ingredient-qty-${index}-error`
+                const product = productsById.get(ingredient.productId)
+                const unitOptions = getProductUnits(product)
 
                 return (
                   <li key={index} className="meal-ingredient-row">
-                    <div className="meal-ingredient-row__main">
-                      <label className="visually-hidden" htmlFor={`meal-ingredient-product-${index}`}>
+                    <div className="meal-ingredient-row__main meal-ingredient-row__main--units">
+                      <label
+                        className="visually-hidden"
+                        htmlFor={`meal-ingredient-product-${index}`}
+                      >
                         מוצר
                       </label>
                       <select
@@ -363,14 +453,14 @@ function MealsPage() {
                         }
                       >
                         <option value="">בחרו מוצר</option>
-                        {products.map((product) => (
-                          <option key={product.id} value={product.id}>
-                            {product.name}
+                        {products.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
                           </option>
                         ))}
                       </select>
 
-                      <div className="meal-ingredient-row__qty">
+                      <div className="meal-ingredient-row__qty meal-ingredient-row__qty--with-select">
                         <label
                           className="visually-hidden"
                           htmlFor={`meal-ingredient-qty-${index}`}
@@ -384,15 +474,15 @@ function MealsPage() {
                           min="0"
                           step="any"
                           className="input-ltr meal-ingredient-row__qty-input"
-                          value={ingredient.quantityGrams}
+                          value={ingredient.quantity}
                           onChange={(event) =>
                             handleIngredientChange(
                               index,
-                              'quantityGrams',
+                              'quantity',
                               event.target.value,
                             )
                           }
-                          placeholder="150"
+                          placeholder="2"
                           aria-invalid={Boolean(itemErrors.quantityGrams)}
                           aria-describedby={
                             itemErrors.quantityGrams
@@ -400,7 +490,31 @@ function MealsPage() {
                               : undefined
                           }
                         />
-                        <span className="meal-ingredient-row__unit">גרם</span>
+                        <label
+                          className="visually-hidden"
+                          htmlFor={`meal-ingredient-unit-${index}`}
+                        >
+                          יחידה
+                        </label>
+                        <select
+                          id={`meal-ingredient-unit-${index}`}
+                          className="meal-ingredient-row__unit-select"
+                          value={ingredient.unitId}
+                          onChange={(event) =>
+                            handleIngredientChange(
+                              index,
+                              'unitId',
+                              event.target.value,
+                            )
+                          }
+                          disabled={!ingredient.productId}
+                        >
+                          {unitOptions.map((unit) => (
+                            <option key={unit.id} value={unit.id}>
+                              {unit.name}
+                            </option>
+                          ))}
+                        </select>
                       </div>
 
                       <button

@@ -9,10 +9,13 @@ import {
   getMeals,
   getProducts,
   getRecommendedSlots,
+  GRAMS_UNIT,
+  quantityToGrams,
   removePlannerItem,
   SLOT_IDS,
   tagToRecommendedSlot,
   updatePlannerItemQuantity,
+  updatePlannerMealMultiplier,
 } from '../services/storage.js'
 import {
   calculateMealNutrition,
@@ -174,6 +177,27 @@ function ingredientLabel(ingredient, productsById) {
   return 'מוצר לא זמין'
 }
 
+function getProductUnits(product) {
+  const custom = Array.isArray(product?.units) ? product.units : []
+  return [GRAMS_UNIT, ...custom]
+}
+
+function resolveUnit(product, unitId) {
+  const units = getProductUnits(product)
+  return units.find((unit) => unit.id === unitId) || GRAMS_UNIT
+}
+
+function formatMultiplier(value) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) {
+    return '1.00'
+  }
+  return number.toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
 function PlannerItemCard({
   item,
   displayItem,
@@ -181,11 +205,28 @@ function PlannerItemCard({
   productsById,
   quantityDrafts,
   itemErrors,
+  multiplierDrafts,
+  multiplierErrors,
+  expandedMealIds,
+  onToggleIngredients,
   onQuantityDraftChange,
   onCommitQuantity,
+  onMultiplierDraftChange,
+  onCommitMultiplier,
+  onStepMultiplier,
   onRemove,
 }) {
   const nutrition = calculatePlannerNutrition([displayItem], products)
+  const isMeal = item.type === 'meal'
+  const ingredientsExpanded = !isMeal || expandedMealIds.has(item.id)
+  const multiplierValue = Object.prototype.hasOwnProperty.call(
+    multiplierDrafts,
+    item.id,
+  )
+    ? multiplierDrafts[item.id]
+    : formatMultiplier(item.mealMultiplier ?? 1)
+  const multiplierError = multiplierErrors[item.id]
+  const tags = mealTags(item)
 
   function draftKey(ingredientIndex) {
     return `${item.id}:${ingredientIndex}`
@@ -208,18 +249,22 @@ function PlannerItemCard({
     return item.ingredients[ingredientIndex].quantityGrams
   }
 
-  const tags = mealTags(item)
-
   return (
     <li className="today-item-card">
       <div className="today-item-card__top">
         <div className="today-item-card__info">
-          {item.type === 'meal' && tags.length > 0 ? (
+          {isMeal && tags.length > 0 ? (
             <span className="today-item-card__tag">{formatTagList(tags)}</span>
           ) : item.type === 'product' ? (
             <span className="today-item-card__tag">מוצר</span>
           ) : null}
           <span className="today-item-card__name">{item.name}</span>
+          {isMeal ? (
+            <span className="today-item-card__multiplier-label">
+              כמות ארוחה ×{' '}
+              <Num>{formatMultiplier(item.mealMultiplier ?? 1)}</Num>
+            </span>
+          ) : null}
           <NutritionSummary nutrition={nutrition} />
         </div>
         <button
@@ -231,85 +276,153 @@ function PlannerItemCard({
         </button>
       </div>
 
-      <ul className="today-ingredient-list">
-        {item.ingredients.map((ingredient, ingredientIndex) => {
-          const key = draftKey(ingredientIndex)
-          const draftValue = getQuantityDraft(ingredientIndex)
-          const error = itemErrors[key]
-          const inputId = `today-qty-${item.id}-${ingredientIndex}`
-          const errorId = `${inputId}-error`
-          const ingredientNutrition = calculateProductNutrition(
-            productsById.get(ingredient.productId) || {
-              caloriesPer100g: ingredient.caloriesPer100g,
-              proteinPer100g: ingredient.proteinPer100g,
-              carbsPer100g: ingredient.carbsPer100g,
-              fatPer100g: ingredient.fatPer100g,
-            },
-            getEffectiveQuantity(ingredientIndex),
-          )
+      {isMeal ? (
+        <div className="meal-multiplier">
+          <label
+            className="meal-multiplier__label"
+            htmlFor={`meal-multiplier-${item.id}`}
+          >
+            כמות ארוחה
+          </label>
+          <div className="meal-multiplier__controls">
+            <button
+              type="button"
+              className="meal-multiplier__step"
+              onClick={() => onStepMultiplier(item.id, -0.25)}
+              aria-label="הקטנת כמות ארוחה"
+            >
+              −
+            </button>
+            <input
+              id={`meal-multiplier-${item.id}`}
+              type="number"
+              inputMode="decimal"
+              min="0.25"
+              step="0.25"
+              className="input-ltr meal-multiplier__input"
+              value={multiplierValue}
+              onChange={(event) =>
+                onMultiplierDraftChange(item.id, event.target.value)
+              }
+              onBlur={(event) =>
+                onCommitMultiplier(item.id, event.target.value)
+              }
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  onCommitMultiplier(item.id, event.currentTarget.value)
+                  event.currentTarget.blur()
+                }
+              }}
+              aria-invalid={Boolean(multiplierError)}
+            />
+            <button
+              type="button"
+              className="meal-multiplier__step"
+              onClick={() => onStepMultiplier(item.id, 0.25)}
+              aria-label="הגדלת כמות ארוחה"
+            >
+              +
+            </button>
+          </div>
+          {multiplierError ? (
+            <p className="product-field__error">{multiplierError}</p>
+          ) : null}
+        </div>
+      ) : null}
 
-          return (
-            <li key={key} className="today-ingredient-row">
-              <div className="today-ingredient-row__main">
-                <span className="today-ingredient-row__name">
-                  {ingredientLabel(ingredient, productsById)}
-                </span>
-                <div className="today-ingredient-row__qty">
-                  <label className="visually-hidden" htmlFor={inputId}>
-                    כמות בגרם
-                  </label>
-                  <input
-                    id={inputId}
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="any"
-                    className="input-ltr today-ingredient-row__qty-input"
-                    value={draftValue}
-                    onChange={(event) =>
-                      onQuantityDraftChange(
-                        item.id,
-                        ingredientIndex,
-                        event.target.value,
-                      )
-                    }
-                    onBlur={(event) =>
-                      onCommitQuantity(
-                        item.id,
-                        ingredientIndex,
-                        event.target.value,
-                      )
-                    }
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        event.preventDefault()
+      {isMeal ? (
+        <button
+          type="button"
+          className="today-item-card__expand"
+          onClick={() => onToggleIngredients(item.id)}
+          aria-expanded={ingredientsExpanded}
+        >
+          שינוי מרכיבים
+        </button>
+      ) : null}
+
+      {ingredientsExpanded ? (
+        <ul className="today-ingredient-list">
+          {item.ingredients.map((ingredient, ingredientIndex) => {
+            const key = draftKey(ingredientIndex)
+            const draftValue = getQuantityDraft(ingredientIndex)
+            const error = itemErrors[key]
+            const inputId = `today-qty-${item.id}-${ingredientIndex}`
+            const errorId = `${inputId}-error`
+            const ingredientNutrition = calculateProductNutrition(
+              productsById.get(ingredient.productId) || {
+                caloriesPer100g: ingredient.caloriesPer100g,
+                proteinPer100g: ingredient.proteinPer100g,
+                carbsPer100g: ingredient.carbsPer100g,
+                fatPer100g: ingredient.fatPer100g,
+              },
+              getEffectiveQuantity(ingredientIndex),
+            )
+
+            return (
+              <li key={key} className="today-ingredient-row">
+                <div className="today-ingredient-row__main">
+                  <span className="today-ingredient-row__name">
+                    {ingredientLabel(ingredient, productsById)}
+                  </span>
+                  <div className="today-ingredient-row__qty">
+                    <label className="visually-hidden" htmlFor={inputId}>
+                      כמות בגרם
+                    </label>
+                    <input
+                      id={inputId}
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="any"
+                      className="input-ltr today-ingredient-row__qty-input"
+                      value={draftValue}
+                      onChange={(event) =>
+                        onQuantityDraftChange(
+                          item.id,
+                          ingredientIndex,
+                          event.target.value,
+                        )
+                      }
+                      onBlur={(event) =>
                         onCommitQuantity(
                           item.id,
                           ingredientIndex,
-                          event.currentTarget.value,
+                          event.target.value,
                         )
-                        event.currentTarget.blur()
                       }
-                    }}
-                    aria-invalid={Boolean(error)}
-                    aria-describedby={error ? errorId : undefined}
-                  />
-                  <span className="today-ingredient-row__unit">גרם</span>
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault()
+                          onCommitQuantity(
+                            item.id,
+                            ingredientIndex,
+                            event.currentTarget.value,
+                          )
+                          event.currentTarget.blur()
+                        }
+                      }}
+                      aria-invalid={Boolean(error)}
+                      aria-describedby={error ? errorId : undefined}
+                    />
+                    <span className="today-ingredient-row__unit">גרם</span>
+                  </div>
+                  <span className="today-ingredient-row__kcal">
+                    <Num>{formatMacro(ingredientNutrition.calories)}</Num>
+                    {' קל׳'}
+                  </span>
                 </div>
-                <span className="today-ingredient-row__kcal">
-                  <Num>{formatMacro(ingredientNutrition.calories)}</Num>
-                  {' קל׳'}
-                </span>
-              </div>
-              {error ? (
-                <p id={errorId} className="product-field__error">
-                  {error}
-                </p>
-              ) : null}
-            </li>
-          )
-        })}
-      </ul>
+                {error ? (
+                  <p id={errorId} className="product-field__error">
+                    {error}
+                  </p>
+                ) : null}
+              </li>
+            )
+          })}
+        </ul>
+      ) : null}
     </li>
   )
 }
@@ -317,7 +430,7 @@ function PlannerItemCard({
 function TodayPage() {
   const todayKey = getLocalDateKey()
   const [goals] = useState(() => getGoals())
-  const [products] = useState(() => getProducts())
+  const [products, setProducts] = useState(() => getProducts())
   const [meals] = useState(() => getMeals())
   const [selectedDateKey, setSelectedDateKey] = useState(todayKey)
   const [weekStartKey, setWeekStartKey] = useState(() =>
@@ -331,9 +444,13 @@ function TodayPage() {
   const [tagFilter, setTagFilter] = useState('all')
   const [productQuery, setProductQuery] = useState('')
   const [productQuantities, setProductQuantities] = useState({})
+  const [productUnits, setProductUnits] = useState({})
   const [quantityDrafts, setQuantityDrafts] = useState({})
   const [productErrors, setProductErrors] = useState({})
   const [itemErrors, setItemErrors] = useState({})
+  const [multiplierDrafts, setMultiplierDrafts] = useState({})
+  const [multiplierErrors, setMultiplierErrors] = useState({})
+  const [expandedMealIds, setExpandedMealIds] = useState(() => new Set())
   const [pendingAdd, setPendingAdd] = useState(null)
   const [preferredSlot, setPreferredSlot] = useState(null)
 
@@ -357,6 +474,8 @@ function TodayPage() {
     setDayPlan(getDayPlan(nextKey))
     setQuantityDrafts({})
     setItemErrors({})
+    setMultiplierDrafts({})
+    setMultiplierErrors({})
   }
 
   function shiftWeek(direction) {
@@ -370,11 +489,13 @@ function TodayPage() {
   }
 
   function openAdd(slotHint = null) {
+    setProducts(getProducts())
     setAddTab('meals')
     setMealQuery('')
     setTagFilter('all')
     setProductQuery('')
     setProductQuantities({})
+    setProductUnits({})
     setProductErrors({})
     setPendingAdd(null)
     setPreferredSlot(slotHint)
@@ -523,6 +644,14 @@ function TodayPage() {
     return '100'
   }
 
+  function getProductUnitId(productId) {
+    const draft = productUnits[productId]
+    if (draft !== undefined) {
+      return draft
+    }
+    return GRAMS_UNIT.id
+  }
+
   function handleProductQuantityChange(productId, value) {
     setProductQuantities((current) => ({ ...current, [productId]: value }))
     setProductErrors((current) => {
@@ -535,12 +664,27 @@ function TodayPage() {
     })
   }
 
-  function handlePickProduct(product) {
+  function handleProductUnitChange(productId, unitId) {
+    setProductUnits((current) => ({ ...current, [productId]: unitId }))
+    setProductErrors((current) => {
+      if (!current[productId]) {
+        return current
+      }
+      const next = { ...current }
+      delete next[productId]
+      return next
+    })
+  }
+
+  function resolveProductGrams(product) {
     const quantityValue = getProductQuantity(product.id)
-    const preview = Number(
-      typeof quantityValue === 'string' ? quantityValue.trim() : quantityValue,
-    )
-    if (!Number.isFinite(preview) || preview <= 0) {
+    const unit = resolveUnit(product, getProductUnitId(product.id))
+    return quantityToGrams(quantityValue, unit.grams)
+  }
+
+  function handlePickProduct(product) {
+    const grams = resolveProductGrams(product)
+    if (!Number.isFinite(grams) || grams <= 0) {
       setProductErrors((current) => ({
         ...current,
         [product.id]: 'הכמות חייבת להיות גדולה מאפס',
@@ -551,7 +695,7 @@ function TodayPage() {
     openSlotPicker({
       kind: 'product',
       product,
-      quantityValue,
+      quantityValue: grams,
       recommendedSlots: preferredSlot
         ? [
             preferredSlot,
@@ -652,6 +796,87 @@ function TodayPage() {
     clearQuantityDraft(key)
     clearItemError(key)
     refreshPlan()
+  }
+
+  function handleMultiplierDraftChange(itemId, value) {
+    setMultiplierDrafts((current) => ({ ...current, [itemId]: value }))
+    setMultiplierErrors((current) => {
+      if (!current[itemId]) {
+        return current
+      }
+      const next = { ...current }
+      delete next[itemId]
+      return next
+    })
+  }
+
+  function commitMultiplier(itemId, rawValue) {
+    const result = updatePlannerMealMultiplier(
+      selectedDateKey,
+      itemId,
+      rawValue,
+    )
+
+    if (!result.ok) {
+      setMultiplierErrors((current) => ({
+        ...current,
+        [itemId]:
+          result.errors.mealMultiplier ||
+          result.errors.id ||
+          'מכפיל לא תקין',
+      }))
+      return
+    }
+
+    setMultiplierDrafts((current) => {
+      if (!Object.prototype.hasOwnProperty.call(current, itemId)) {
+        return current
+      }
+      const next = { ...current }
+      delete next[itemId]
+      return next
+    })
+    setMultiplierErrors((current) => {
+      if (!current[itemId]) {
+        return current
+      }
+      const next = { ...current }
+      delete next[itemId]
+      return next
+    })
+    refreshPlan()
+  }
+
+  function stepMultiplier(itemId, delta) {
+    const item = plannerItems.find((entry) => entry.id === itemId)
+    if (!item || item.type !== 'meal') {
+      return
+    }
+
+    const current = Number(item.mealMultiplier ?? 1)
+    const base = Number.isFinite(current) ? current : 1
+    const next = Math.round((base + delta) * 100) / 100
+    if (next <= 0) {
+      setMultiplierErrors((currentErrors) => ({
+        ...currentErrors,
+        [itemId]: 'המכפיל חייב להיות גדול מאפס',
+      }))
+      return
+    }
+
+    commitMultiplier(itemId, next)
+  }
+
+  function toggleIngredients(itemId) {
+    setExpandedMealIds((current) => {
+      const next = new Set(current)
+      if (next.has(itemId)) {
+        next.delete(itemId)
+      } else {
+        next.add(itemId)
+      }
+      return next
+    })
   }
 
   function handleRemoveItem(itemId) {
@@ -943,12 +1168,17 @@ function TodayPage() {
               <ul className="today-pick-list">
                 {visibleProducts.map((product) => {
                   const quantityValue = getProductQuantity(product.id)
+                  const unitId = getProductUnitId(product.id)
+                  const unit = resolveUnit(product, unitId)
+                  const unitOptions = getProductUnits(product)
+                  const grams = quantityToGrams(quantityValue, unit.grams)
                   const previewNutrition = calculateProductNutrition(
                     product,
-                    quantityValue,
+                    Number.isFinite(grams) && grams > 0 ? grams : 0,
                   )
                   const error = productErrors[product.id]
                   const quantityId = `today-product-qty-${product.id}`
+                  const unitSelectId = `today-product-unit-${product.id}`
                   const errorId = `${quantityId}-error`
 
                   return (
@@ -968,7 +1198,7 @@ function TodayPage() {
                         </span>
                         <div className="today-product-qty">
                           <label htmlFor={quantityId}>כמות</label>
-                          <div className="today-product-qty__cluster">
+                          <div className="today-product-qty__cluster today-product-qty__cluster--units">
                             <input
                               id={quantityId}
                               type="number"
@@ -986,9 +1216,39 @@ function TodayPage() {
                               aria-invalid={Boolean(error)}
                               aria-describedby={error ? errorId : undefined}
                             />
-                            <span className="today-product-qty__unit">גרם</span>
+                            <label
+                              className="visually-hidden"
+                              htmlFor={unitSelectId}
+                            >
+                              יחידה
+                            </label>
+                            <select
+                              id={unitSelectId}
+                              className="today-product-qty__unit-select"
+                              value={unitId}
+                              onChange={(event) =>
+                                handleProductUnitChange(
+                                  product.id,
+                                  event.target.value,
+                                )
+                              }
+                            >
+                              {unitOptions.map((option) => (
+                                <option key={option.id} value={option.id}>
+                                  {option.name}
+                                </option>
+                              ))}
+                            </select>
                           </div>
                         </div>
+                        {unit.id !== GRAMS_UNIT.id &&
+                        Number.isFinite(grams) &&
+                        grams > 0 ? (
+                          <span className="today-pick-card__meta">
+                            = <Num>{formatMacro(grams)}</Num>
+                            {' גרם'}
+                          </span>
+                        ) : null}
                         <NutritionSummary nutrition={previewNutrition} />
                         {error ? (
                           <p id={errorId} className="product-field__error">
@@ -1203,8 +1463,15 @@ function TodayPage() {
                       productsById={productsById}
                       quantityDrafts={quantityDrafts}
                       itemErrors={itemErrors}
+                      multiplierDrafts={multiplierDrafts}
+                      multiplierErrors={multiplierErrors}
+                      expandedMealIds={expandedMealIds}
+                      onToggleIngredients={toggleIngredients}
                       onQuantityDraftChange={handleQuantityDraftChange}
                       onCommitQuantity={commitQuantity}
+                      onMultiplierDraftChange={handleMultiplierDraftChange}
+                      onCommitMultiplier={commitMultiplier}
+                      onStepMultiplier={stepMultiplier}
                       onRemove={handleRemoveItem}
                     />
                   ))}
