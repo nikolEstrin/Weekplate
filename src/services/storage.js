@@ -750,6 +750,221 @@ export function deleteMeal(id) {
   return true
 }
 
+const LIBRARY_VERSION = 1
+
+/** Snapshot of products + saved meals only (no plans, no goals). */
+export function exportLibrary() {
+  return {
+    version: LIBRARY_VERSION,
+    products: getProducts(),
+    meals: getMeals(),
+  }
+}
+
+export function getLibraryExportFilename(date = new Date()) {
+  return `weekplate-library-${getLocalDateKey(date)}.json`
+}
+
+/**
+ * Parse library JSON text. Does not write storage.
+ * @returns {{ ok: true, data: unknown } | { ok: false, error: string }}
+ */
+export function parseLibraryJson(text) {
+  if (typeof text !== 'string' || text.trim() === '') {
+    return { ok: false, error: 'קובץ ריק או לא תקין' }
+  }
+
+  try {
+    return { ok: true, data: JSON.parse(text) }
+  } catch {
+    return { ok: false, error: 'קובץ JSON לא תקין' }
+  }
+}
+
+/**
+ * Validate an entire library payload before any write.
+ * mode: 'merge' | 'replace'
+ * @returns {{ ok: boolean, error?: string, products?: object[], meals?: object[] }}
+ */
+export function validateLibraryImport(data, mode) {
+  const importMode = mode === 'replace' ? 'replace' : mode === 'merge' ? 'merge' : null
+  if (!importMode) {
+    return { ok: false, error: 'מצב ייבוא לא תקין' }
+  }
+
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return { ok: false, error: 'מבנה הקובץ אינו תקין' }
+  }
+
+  if (data.version !== LIBRARY_VERSION) {
+    return { ok: false, error: 'גרסת קובץ לא נתמכת' }
+  }
+
+  if (!Array.isArray(data.products)) {
+    return { ok: false, error: 'רשימת המוצרים אינה תקינה' }
+  }
+
+  if (!Array.isArray(data.meals)) {
+    return { ok: false, error: 'רשימת הארוחות אינה תקינה' }
+  }
+
+  const importedProducts = []
+  const seenProductIds = new Set()
+
+  for (let index = 0; index < data.products.length; index += 1) {
+    const item = data.products[index]
+    if (!item || typeof item !== 'object') {
+      return {
+        ok: false,
+        error: `מוצר לא תקין במיקום ${index + 1}`,
+      }
+    }
+
+    const id = typeof item.id === 'string' ? item.id.trim() : ''
+    if (!id) {
+      return {
+        ok: false,
+        error: `למוצר במיקום ${index + 1} חסר מזהה`,
+      }
+    }
+    if (seenProductIds.has(id)) {
+      return {
+        ok: false,
+        error: `מזהה מוצר כפול: ${id}`,
+      }
+    }
+
+    const result = validateProduct(item)
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: `מוצר לא תקין (${id || index + 1})`,
+      }
+    }
+
+    seenProductIds.add(id)
+    importedProducts.push({
+      id,
+      ...result.product,
+    })
+  }
+
+  let productListForMeals
+  if (importMode === 'replace') {
+    productListForMeals = importedProducts
+  } else {
+    const merged = new Map()
+    for (const product of getProducts()) {
+      merged.set(product.id, product)
+    }
+    for (const product of importedProducts) {
+      merged.set(product.id, product)
+    }
+    productListForMeals = [...merged.values()]
+  }
+
+  const importedMeals = []
+  const seenMealIds = new Set()
+
+  for (let index = 0; index < data.meals.length; index += 1) {
+    const item = data.meals[index]
+    if (!item || typeof item !== 'object') {
+      return {
+        ok: false,
+        error: `ארוחה לא תקינה במיקום ${index + 1}`,
+      }
+    }
+
+    const id = typeof item.id === 'string' ? item.id.trim() : ''
+    if (!id) {
+      return {
+        ok: false,
+        error: `לארוחה במיקום ${index + 1} חסר מזהה`,
+      }
+    }
+    if (seenMealIds.has(id)) {
+      return {
+        ok: false,
+        error: `מזהה ארוחה כפול: ${id}`,
+      }
+    }
+
+    const result = validateMeal(item, productListForMeals)
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: `ארוחה לא תקינה (${id || index + 1})`,
+      }
+    }
+
+    seenMealIds.add(id)
+    importedMeals.push({
+      id,
+      ...result.meal,
+    })
+  }
+
+  return {
+    ok: true,
+    products: importedProducts,
+    meals: importedMeals,
+  }
+}
+
+/**
+ * Import products + meals after full validation.
+ * Never writes on validation failure. Never touches plans or goals.
+ * mode: 'merge' | 'replace'
+ */
+export function importLibrary(data, mode) {
+  const importMode = mode === 'replace' ? 'replace' : mode === 'merge' ? 'merge' : null
+  if (!importMode) {
+    return { ok: false, error: 'מצב ייבוא לא תקין' }
+  }
+
+  const validated = validateLibraryImport(data, importMode)
+  if (!validated.ok) {
+    return validated
+  }
+
+  if (importMode === 'replace') {
+    saveProducts(validated.products)
+    saveMeals(validated.meals)
+    return {
+      ok: true,
+      products: validated.products,
+      meals: validated.meals,
+    }
+  }
+
+  const productsById = new Map()
+  for (const product of getProducts()) {
+    productsById.set(product.id, product)
+  }
+  for (const product of validated.products) {
+    productsById.set(product.id, product)
+  }
+  const nextProducts = [...productsById.values()]
+
+  const mealsById = new Map()
+  for (const meal of getMeals()) {
+    mealsById.set(meal.id, meal)
+  }
+  for (const meal of validated.meals) {
+    mealsById.set(meal.id, meal)
+  }
+  const nextMeals = [...mealsById.values()]
+
+  saveProducts(nextProducts)
+  saveMeals(nextMeals)
+
+  return {
+    ok: true,
+    products: nextProducts,
+    meals: nextMeals,
+  }
+}
+
 export function validateGoals(input) {
   const errors = {}
   const source = input && typeof input === 'object' ? input : {}
