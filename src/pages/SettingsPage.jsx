@@ -157,8 +157,20 @@ function SettingsPage() {
         <h1>הגדרות</h1>
       </header>
 
+      <aside className="settings-hero" aria-label="הודעת עידוד">
+        <span className="settings-hero__emoji" aria-hidden="true">
+          🥑
+        </span>
+        <p className="settings-hero__text">
+          צעדים קטנים, תוצאות גדולות ✨
+        </p>
+      </aside>
+
       <form className="goals-form" onSubmit={handleSubmit} noValidate>
-        <h2 className="goals-form__title">יעדים יומיים</h2>
+        <h2 className="goals-form__title">
+          <span aria-hidden="true">🎯</span>
+          יעדים יומיים
+        </h2>
 
         {GOAL_FIELDS.map((field) => (
           <div className="product-field" key={field.name}>
@@ -190,6 +202,7 @@ function SettingsPage() {
 
       <section className="backup-panel" aria-labelledby="backup-title">
         <h2 id="backup-title" className="goals-form__title">
+          <span aria-hidden="true">💾</span>
           גיבוי ושחזור
         </h2>
 
@@ -251,6 +264,27 @@ function SettingsPage() {
             {backupError}
           </p>
         ) : null}
+      </section>
+
+      <section className="settings-card" aria-labelledby="prefs-title">
+        <h2 id="prefs-title" className="settings-card__title">
+          <span aria-hidden="true">ℹ️</span>
+          העדפות / מידע
+        </h2>
+        <ul className="settings-card__list">
+          <li className="settings-card__row">
+            <span className="settings-card__row-label">אפליקציה</span>
+            <span className="settings-card__row-value">Weekplate</span>
+          </li>
+          <li className="settings-card__row">
+            <span className="settings-card__row-label">שפה</span>
+            <span className="settings-card__row-value">עברית</span>
+          </li>
+          <li className="settings-card__row">
+            <span className="settings-card__row-label">כיוון</span>
+            <span className="settings-card__row-value">ימין לשמאל</span>
+          </li>
+        </ul>
       </section>
     </section>
   )

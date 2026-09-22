@@ -117,11 +117,20 @@ function mealToForm(meal, productsById) {
   }
 }
 
-function formatTagList(tags) {
-  return tags
-    .map((tag) => TAG_LABELS[tag] || tag)
-    .filter(Boolean)
-    .join(' · ')
+function TagChips({ tags }) {
+  if (!Array.isArray(tags) || tags.length === 0) {
+    return null
+  }
+
+  return (
+    <span className="tag-chip-row">
+      {tags.map((tag) => (
+        <span key={tag} className={`tag-chip tag-chip--${tag}`}>
+          {TAG_LABELS[tag] || tag}
+        </span>
+      ))}
+    </span>
+  )
 }
 
 function buildIngredientPayload(item, productsById) {
@@ -655,9 +664,12 @@ function MealsPage() {
 
       {visibleMeals.length === 0 ? (
         <div className="empty-state">
+          <span className="empty-state__emoji" aria-hidden="true">
+            🍽️
+          </span>
           <p>
             {meals.length === 0
-              ? 'עדיין לא שמרת ארוחות'
+              ? 'עוד לא שמרת ארוחות'
               : 'לא נמצאו ארוחות התואמות לחיפוש או לסינון.'}
           </p>
         </div>
@@ -672,11 +684,7 @@ function MealsPage() {
                 <div className="meal-card__body">
                   <div className="meal-card__info">
                     <span className="meal-card__name">{meal.name}</span>
-                    {tags.length > 0 ? (
-                      <span className="meal-card__tag">
-                        {formatTagList(tags)}
-                      </span>
-                    ) : null}
+                    <TagChips tags={tags} />
                     <span className="meal-card__nutrition">
                       <span className="num">{formatMacro(nutrition.calories)}</span>
                       {' קל׳ · '}

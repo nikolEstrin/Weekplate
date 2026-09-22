@@ -502,46 +502,70 @@ function ProductsPage() {
 
       {visibleProducts.length === 0 ? (
         <div className="empty-state">
+          <span className="empty-state__emoji" aria-hidden="true">
+            🥕
+          </span>
           <p>
             {products.length === 0
-              ? 'עדיין לא הוספת מוצרים'
+              ? 'עדיין אין פה מוצרים'
               : 'לא נמצאו מוצרים התואמים לחיפוש.'}
           </p>
         </div>
       ) : (
         <ul className="product-list">
-          {visibleProducts.map((product) => (
-            <li key={product.id}>
-              <button
-                type="button"
-                className="product-card"
-                onClick={() => openEdit(product)}
-              >
-                <span className="product-card__name">{product.name}</span>
-                <span className="product-card__nutrition">
-                  <span className="num">{formatCalories(product.caloriesPer100g)}</span>
-                  {' קל׳ · '}
-                  <span className="num">{formatMacro(product.proteinPer100g)}</span>
-                  {' גרם חלבון · '}
-                  <span className="num">{formatMacro(product.carbsPer100g)}</span>
-                  {' גרם פחמימות · '}
-                  <span className="num">{formatMacro(product.fatPer100g)}</span>
-                  {' גרם שומן'}
-                </span>
-                {Array.isArray(product.units) && product.units.length > 0 ? (
-                  <span className="product-card__units">
-                    {product.units
-                      .map((unit) => `${unit.name} (${unit.grams}ג)`)
-                      .join(' · ')}
+          {visibleProducts.map((product, index) => {
+            const icons = ['🍎', '🥑', '🥦', '🍓', '🥕', '🥗']
+            const icon = icons[index % icons.length]
+
+            return (
+              <li key={product.id}>
+                <button
+                  type="button"
+                  className="product-card"
+                  onClick={() => openEdit(product)}
+                >
+                  <span className="product-card__icon" aria-hidden="true">
+                    {icon}
                   </span>
-                ) : (
-                  <span className="product-card__units product-card__units--empty">
-                    לחיצה לעריכה ולהוספת יחידות מידה
+                  <span className="product-card__body">
+                    <span className="product-card__name">{product.name}</span>
+                    <span className="product-card__nutrition">
+                      <span className="num">
+                        {formatCalories(product.caloriesPer100g)}
+                      </span>
+                      {' קל׳ · '}
+                      <span className="num">
+                        {formatMacro(product.proteinPer100g)}
+                      </span>
+                      {'ג חלבון · '}
+                      <span className="num">
+                        {formatMacro(product.carbsPer100g)}
+                      </span>
+                      {'ג פחמימות · '}
+                      <span className="num">
+                        {formatMacro(product.fatPer100g)}
+                      </span>
+                      {'ג שומן'}
+                      {' · '}
+                      <span className="num">100</span>
+                      {' גרם'}
+                    </span>
+                    {Array.isArray(product.units) && product.units.length > 0 ? (
+                      <span className="product-card__units">
+                        {product.units
+                          .map((unit) => `${unit.name} (${unit.grams}ג)`)
+                          .join(' · ')}
+                      </span>
+                    ) : (
+                      <span className="product-card__units product-card__units--empty">
+                        לחיצה לעריכה ולהוספת יחידות מידה
+                      </span>
+                    )}
                   </span>
-                )}
-              </button>
-            </li>
-          ))}
+                </button>
+              </li>
+            )
+          })}
         </ul>
       )}
     </section>

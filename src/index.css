@@ -1,30 +1,121 @@
+/* Weekplate design system — pastel Hebrew mobile UI */
 :root {
-  --color-bg: #f5f6f8;
+  /* Surfaces */
+  --color-bg: #faf6f0;
+  --color-bg-soft: #fff9f2;
   --color-surface: #ffffff;
-  --color-text: #1a1a1a;
-  --color-text-muted: #6b7280;
-  --color-border: #e5e7eb;
-  --color-accent: #2f7d4a;
-  --color-accent-soft: #e8f5ec;
-  --color-protein: #3b82f6;
-  --color-carbs: #f59e0b;
-  --color-fat: #eab308;
-  --color-danger: #b42318;
-  --color-danger-bg: #fff5f5;
-  --color-danger-border: #f0b4b4;
-  --color-input-bg: #f3f4f6;
-  --radius-card: 14px;
-  --radius-control: 12px;
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --nav-height: 64px;
-  --app-max-width: 430px;
+  --color-surface-muted: #f7f3ec;
+  --color-cream: #fff4e8;
+  --color-input-bg: #f3efe8;
 
-  font-family: 'Segoe UI', Tahoma, 'Noto Sans Hebrew', 'Arial Hebrew', Arial,
-    sans-serif;
+  /* Text */
+  --color-text: #1e2a44;
+  --color-text-muted: #6b7385;
+  --color-text-soft: #8a92a3;
+
+  /* Brand / accents */
+  --color-accent: #5bb98a;
+  --color-accent-strong: #3d9a6e;
+  --color-accent-soft: #e4f7ed;
+  --color-accent-peach: #ffc9a8;
+  --color-accent-peach-soft: #ffe8d8;
+  --color-accent-lavender: #c9c4f5;
+  --color-accent-lavender-soft: #ebe8ff;
+  --color-accent-yellow: #ffe39a;
+  --color-accent-yellow-soft: #fff6d6;
+  --color-accent-pink: #f7c4d8;
+  --color-accent-pink-soft: #fde8f0;
+  --color-accent-mint: #b8e8d4;
+  --color-accent-blue: #b8d4f8;
+  --color-accent-blue-soft: #e5f0ff;
+  --color-accent-purple: #d4c4f7;
+  --color-accent-purple-soft: #f0e9ff;
+
+  /* Macros */
+  --color-calories: #5bb98a;
+  --color-protein: #6b9ae8;
+  --color-carbs: #f0a04b;
+  --color-fat: #e8c84a;
+
+  /* Semantic */
+  --color-border: #ebe4da;
+  --color-border-strong: #ddd4c8;
+  --color-danger: #d64545;
+  --color-danger-bg: #fff0f0;
+  --color-danger-border: #f5c2c2;
+  --color-success: #3d9a6e;
+
+  /* Meal slot tones */
+  --slot-breakfast: #ebe8ff;
+  --slot-breakfast-accent: #8b84d8;
+  --slot-lunch: #fff0d6;
+  --slot-lunch-accent: #e09a3e;
+  --slot-dinner: #f0e9ff;
+  --slot-dinner-accent: #9b7ad4;
+  --slot-snacks: #fde8f0;
+  --slot-snacks-accent: #d67a9c;
+
+  /* Tag chips */
+  --tag-breakfast-bg: #ebe8ff;
+  --tag-breakfast-fg: #5a54a8;
+  --tag-lunch-bg: #fff0d6;
+  --tag-lunch-fg: #b06e1e;
+  --tag-dinner-bg: #f0e9ff;
+  --tag-dinner-fg: #6e4fa8;
+  --tag-snack-bg: #fde8f0;
+  --tag-snack-fg: #b04e78;
+  --tag-dessert-bg: #ffe8d8;
+  --tag-dessert-fg: #c45e3a;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Radius */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
+  --radius-pill: 999px;
+  --radius-card: var(--radius-lg);
+  --radius-control: var(--radius-md);
+
+  /* Shadows */
+  --shadow-soft: 0 2px 8px rgba(30, 42, 68, 0.04);
+  --shadow-card: 0 4px 16px rgba(30, 42, 68, 0.06);
+  --shadow-float: 0 8px 24px rgba(30, 42, 68, 0.08);
+  --shadow-nav: 0 -4px 20px rgba(30, 42, 68, 0.06);
+
+  /* Layout */
+  --nav-height: 68px;
+  --app-max-width: 430px;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* Typography */
+  --font-family: 'Rubik', 'Segoe UI', Tahoma, 'Noto Sans Hebrew', 'Arial Hebrew',
+    Arial, sans-serif;
+  --font-size-xs: 0.7rem;
+  --font-size-sm: 0.8rem;
+  --font-size-md: 0.9rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.375rem;
+  --font-size-2xl: 1.6rem;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  font-family: var(--font-family);
   line-height: 1.45;
   font-weight: 400;
   color: var(--color-text);
-  background-color: #e8eaed;
+  background-color: #e8e2d8;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -44,6 +135,7 @@ html {
 body {
   margin: 0;
   min-height: 100svh;
+  background: #e8e2d8;
 }
 
 #root {
@@ -55,6 +147,7 @@ body {
 button {
   font: inherit;
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 input,
@@ -65,14 +158,15 @@ textarea {
 }
 
 h1,
-h2 {
+h2,
+h3 {
   margin: 0;
   color: var(--color-text);
 }
 
 h1 {
-  font-size: 1.375rem;
-  font-weight: 700;
+  font-size: var(--font-size-xl);
+  font-weight: var(--font-weight-bold);
   letter-spacing: -0.02em;
   line-height: 1.25;
 }
@@ -82,7 +176,7 @@ p {
   color: var(--color-text-muted);
 }
 
-/* Keep numeric strings readable in RTL (ratios stay outside). */
+/* Keep numeric strings readable in RTL (units stay outside). */
 .num {
   direction: ltr;
   unicode-bidi: isolate;

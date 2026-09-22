@@ -56,10 +56,10 @@ const SLOT_LABELS = {
 }
 
 const SLOT_SECTIONS = [
-  { id: 'breakfast', title: 'ארוחת בוקר', kind: 'primary' },
-  { id: 'lunch', title: 'ארוחת צהריים', kind: 'primary' },
-  { id: 'dinner', title: 'ארוחת ערב', kind: 'primary' },
-  { id: 'snacks', title: 'נשנושים', kind: 'snacks' },
+  { id: 'breakfast', title: 'ארוחת בוקר', kind: 'primary', emoji: '🥑' },
+  { id: 'lunch', title: 'ארוחת צהריים', kind: 'primary', emoji: '🥗' },
+  { id: 'dinner', title: 'ארוחת ערב', kind: 'primary', emoji: '🥦' },
+  { id: 'snacks', title: 'נשנושים', kind: 'snacks', emoji: '🍓' },
 ]
 
 const HEBREW_WEEKDAYS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
@@ -154,11 +154,28 @@ function highlightedSlotsFromTags(tags) {
   return ordered
 }
 
-function formatTagList(tags) {
-  return tags
-    .map((tag) => TAG_LABELS[tag] || tag)
-    .filter(Boolean)
-    .join(' · ')
+function TagChips({ tags, fallback }) {
+  if (Array.isArray(tags) && tags.length > 0) {
+    return (
+      <span className="tag-chip-row">
+        {tags.map((tag) => (
+          <span key={tag} className={`tag-chip tag-chip--${tag}`}>
+            {TAG_LABELS[tag] || tag}
+          </span>
+        ))}
+      </span>
+    )
+  }
+
+  if (fallback) {
+    return (
+      <span className={`tag-chip tag-chip--${fallback}`}>
+        {TAG_LABELS[fallback] || fallback}
+      </span>
+    )
+  }
+
+  return null
 }
 
 function ingredientLabel(ingredient, productsById) {
@@ -254,9 +271,9 @@ function PlannerItemCard({
       <div className="today-item-card__top">
         <div className="today-item-card__info">
           {isMeal && tags.length > 0 ? (
-            <span className="today-item-card__tag">{formatTagList(tags)}</span>
+            <TagChips tags={tags} />
           ) : item.type === 'product' ? (
-            <span className="today-item-card__tag">מוצר</span>
+            <span className="tag-chip tag-chip--product">מוצר</span>
           ) : null}
           <span className="today-item-card__name">{item.name}</span>
           {isMeal ? (
@@ -1098,9 +1115,12 @@ function TodayPage() {
 
             {visibleMeals.length === 0 ? (
               <div className="empty-state">
+                <span className="empty-state__emoji" aria-hidden="true">
+                  🍽️
+                </span>
                 <p>
                   {meals.length === 0
-                    ? 'עדיין לא שמרת ארוחות'
+                    ? 'עוד לא שמרת ארוחות'
                     : 'לא נמצאו ארוחות התואמות לחיפוש או לסינון.'}
                 </p>
               </div>
@@ -1114,11 +1134,7 @@ function TodayPage() {
                     <li key={meal.id} className="today-pick-card">
                       <div className="today-pick-card__info">
                         <span className="today-pick-card__name">{meal.name}</span>
-                        {tags.length > 0 ? (
-                          <span className="today-pick-card__tag">
-                            {formatTagList(tags)}
-                          </span>
-                        ) : null}
+                        <TagChips tags={tags} />
                         <NutritionSummary nutrition={nutrition} />
                       </div>
                       <button
@@ -1158,9 +1174,12 @@ function TodayPage() {
 
             {visibleProducts.length === 0 ? (
               <div className="empty-state">
+                <span className="empty-state__emoji" aria-hidden="true">
+                  🥕
+                </span>
                 <p>
                   {products.length === 0
-                    ? 'עדיין לא הוספת מוצרים'
+                    ? 'עדיין אין פה מוצרים'
                     : 'לא נמצאו מוצרים התואמים לחיפוש.'}
                 </p>
               </div>
@@ -1278,7 +1297,12 @@ function TodayPage() {
   return (
     <section className="page">
       <header className="page-header page-header--today">
-        <h1>{isSelectedToday ? 'היום' : 'תפריט יומי'}</h1>
+        <h1>
+          {isSelectedToday ? 'היום' : 'תפריט יומי'}
+          <span className="page-header__emoji" aria-hidden="true">
+            🌞
+          </span>
+        </h1>
         {!isSelectedToday ? (
           <button
             type="button"
@@ -1370,6 +1394,15 @@ function TodayPage() {
         </div>
       </section>
 
+      <aside className="motivation-card" aria-label="עידוד יומי">
+        <span className="motivation-card__emoji" aria-hidden="true">
+          💚
+        </span>
+        <p className="motivation-card__text">
+          יש לך את זה! אוכל טוב = מצב רוח טוב ✨
+        </p>
+      </aside>
+
       <div className="nutrition-grid">
         {NUTRITION_CARDS.map((card) => (
           <article
@@ -1431,11 +1464,16 @@ function TodayPage() {
           return (
             <section
               key={section.id}
-              className="slot-section"
+              className={`slot-section slot-section--${section.id}`}
               aria-label={section.title}
             >
               <div className="slot-section__header">
-                <h3 className="slot-section__title">{section.title}</h3>
+                <h3 className="slot-section__title">
+                  <span className="slot-section__emoji" aria-hidden="true">
+                    {section.emoji}
+                  </span>
+                  {section.title}
+                </h3>
                 <button
                   type="button"
                   className="slot-section__add"
@@ -1450,7 +1488,7 @@ function TodayPage() {
 
               {items.length === 0 ? (
                 <div className="slot-section__empty">
-                  <p>ריק</p>
+                  <p>ריק לעכשיו 🌿</p>
                 </div>
               ) : (
                 <ul className="today-item-list">
