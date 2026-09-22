@@ -444,3 +444,83 @@ Prefer simple readable code over abstractions.
 
 When working on one feature, do not redesign unrelated parts of the application.
 
+\## UI redesign direction
+
+
+
+Weekplate is Hebrew-first and RTL.
+
+
+
+Visual direction:
+
+\- colorful pastel
+
+\- playful but polished
+
+\- cute food-related emoji/illustration accents
+
+\- modern mobile-app feel
+
+\- warm, friendly and visually rich
+
+\- not childish
+
+
+
+Primary mobile width:
+
+375-430px.
+
+
+
+The UI should be designed for future Capacitor packaging for iOS/Android.
+
+
+
+Requirements:
+
+\- touch-first interactions
+
+\- no hover-dependent functionality
+
+\- mobile bottom navigation
+
+\- safe-area support
+
+\- natural vertical scrolling
+
+\- mobile keyboard-friendly forms
+
+\- no desktop-only navigation patterns
+
+\- no horizontal overflow
+
+\- modals/sheets must fit mobile screens
+
+\- numeric values must remain readable in RTL
+
+
+
+Use centralized reusable design tokens instead of random per-component colors.
+
+
+
+UI-only redesign tasks must not change:
+
+\- data models
+
+\- storage keys
+
+\- migrations
+
+\- nutrition calculations
+
+\- planner behavior
+
+\- product-unit behavior
+
+\- meal-multiplier behavior
+
+\- import/export behavior
+
