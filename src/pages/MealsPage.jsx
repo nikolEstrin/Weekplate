@@ -4,6 +4,7 @@ import {
   deleteMeal,
   getMeals,
   getProducts,
+  MEAL_TAG_OPTIONS,
   updateMeal,
 } from '../services/storage.js'
 import {
@@ -16,8 +17,8 @@ const MEAL_TAGS = [
   { id: 'lunch', label: 'ארוחת צהריים' },
   { id: 'dinner', label: 'ארוחת ערב' },
   { id: 'snack', label: 'נשנוש' },
-  { id: 'other', label: 'אחר' },
-]
+  { id: 'dessert', label: 'קינוח' },
+].filter((tag) => MEAL_TAG_OPTIONS.includes(tag.id))
 
 const TAG_LABELS = Object.fromEntries(
   MEAL_TAGS.map((tag) => [tag.id, tag.label]),
@@ -27,7 +28,7 @@ const EMPTY_INGREDIENT = { productId: '', quantityGrams: '' }
 
 const EMPTY_FORM = {
   name: '',
-  tag: 'breakfast',
+  tags: ['breakfast'],
   ingredients: [{ ...EMPTY_INGREDIENT }],
 }
 
@@ -40,10 +41,27 @@ function formatMacro(value) {
   })
 }
 
+function mealTagsList(meal) {
+  if (Array.isArray(meal.tags) && meal.tags.length > 0) {
+    return meal.tags
+  }
+  if (typeof meal.tag === 'string' && meal.tag.trim() !== '') {
+    return [meal.tag]
+  }
+  return []
+}
+
+function mealHasTag(meal, tagId) {
+  return mealTagsList(meal).includes(tagId)
+}
+
 function mealToForm(meal) {
+  const tags = mealTagsList(meal).filter((tag) =>
+    MEAL_TAG_OPTIONS.includes(tag),
+  )
   return {
     name: meal.name,
-    tag: meal.tag,
+    tags: tags.length > 0 ? tags : ['breakfast'],
     ingredients:
       Array.isArray(meal.ingredients) && meal.ingredients.length > 0
         ? meal.ingredients.map((item) => ({
@@ -52,6 +70,13 @@ function mealToForm(meal) {
           }))
         : [{ ...EMPTY_INGREDIENT }],
   }
+}
+
+function formatTagList(tags) {
+  return tags
+    .map((tag) => TAG_LABELS[tag] || tag)
+    .filter(Boolean)
+    .join(' · ')
 }
 
 function MealsPage() {
@@ -72,7 +97,7 @@ function MealsPage() {
     setEditingId(null)
     setForm({
       name: '',
-      tag: 'breakfast',
+      tags: ['breakfast'],
       ingredients: [{ ...EMPTY_INGREDIENT }],
     })
     setErrors({})
@@ -97,8 +122,23 @@ function MealsPage() {
     setForm((current) => ({ ...current, name: event.target.value }))
   }
 
-  function handleTagChange(tag) {
-    setForm((current) => ({ ...current, tag }))
+  function handleTagToggle(tagId) {
+    setForm((current) => {
+      const hasTag = current.tags.includes(tagId)
+      const nextTags = hasTag
+        ? current.tags.filter((tag) => tag !== tagId)
+        : [...current.tags, tagId]
+      return { ...current, tags: nextTags }
+    })
+    setErrors((current) => {
+      if (!current.tags && !current.tag) {
+        return current
+      }
+      const next = { ...current }
+      delete next.tags
+      delete next.tag
+      return next
+    })
   }
 
   function handleAddIngredient() {
@@ -134,7 +174,7 @@ function MealsPage() {
 
     const payload = {
       name: form.name,
-      tag: form.tag,
+      tags: form.tags,
       ingredients: form.ingredients.map((item) => ({
         productId: item.productId,
         quantityGrams: item.quantityGrams,
@@ -180,7 +220,7 @@ function MealsPage() {
 
   const normalizedQuery = query.trim().toLowerCase()
   const visibleMeals = meals.filter((meal) => {
-    const matchesTag = tagFilter === 'all' || meal.tag === tagFilter
+    const matchesTag = tagFilter === 'all' || mealHasTag(meal, tagFilter)
     if (!matchesTag) {
       return false
     }
@@ -195,6 +235,7 @@ function MealsPage() {
     const ingredientErrors = Array.isArray(errors.ingredients)
       ? errors.ingredients
       : []
+    const tagsError = errors.tags || errors.tag
 
     return (
       <section className="page">
@@ -242,31 +283,32 @@ function MealsPage() {
 
           <div className="product-field">
             <span id="meal-tag-label" className="meal-field__label">
-              סוג ארוחה
+              תגיות ארוחה
             </span>
             <div
               className="meal-tag-chips"
               role="group"
               aria-labelledby="meal-tag-label"
             >
-              {MEAL_TAGS.map((tag) => (
-                <button
-                  key={tag.id}
-                  type="button"
-                  className={
-                    form.tag === tag.id
-                      ? 'meal-chip meal-chip--active'
-                      : 'meal-chip'
-                  }
-                  onClick={() => handleTagChange(tag.id)}
-                  aria-pressed={form.tag === tag.id}
-                >
-                  {tag.label}
-                </button>
-              ))}
+              {MEAL_TAGS.map((tag) => {
+                const selected = form.tags.includes(tag.id)
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    className={
+                      selected ? 'meal-chip meal-chip--active' : 'meal-chip'
+                    }
+                    onClick={() => handleTagToggle(tag.id)}
+                    aria-pressed={selected}
+                  >
+                    {tag.label}
+                  </button>
+                )
+              })}
             </div>
-            {errors.tag ? (
-              <p className="product-field__error">{errors.tag}</p>
+            {tagsError ? (
+              <p className="product-field__error">{tagsError}</p>
             ) : null}
           </div>
 
@@ -509,15 +551,18 @@ function MealsPage() {
         <ul className="meal-list">
           {visibleMeals.map((meal) => {
             const nutrition = calculateMealNutrition(meal, products)
+            const tags = mealTagsList(meal)
 
             return (
               <li key={meal.id} className="meal-card">
                 <div className="meal-card__body">
                   <div className="meal-card__info">
                     <span className="meal-card__name">{meal.name}</span>
-                    <span className="meal-card__tag">
-                      {TAG_LABELS[meal.tag] || meal.tag}
-                    </span>
+                    {tags.length > 0 ? (
+                      <span className="meal-card__tag">
+                        {formatTagList(tags)}
+                      </span>
+                    ) : null}
                     <span className="meal-card__nutrition">
                       <span className="num">{formatMacro(nutrition.calories)}</span>
                       {' קל׳ · '}

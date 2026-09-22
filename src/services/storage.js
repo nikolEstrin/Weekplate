@@ -1,7 +1,9 @@
 const PRODUCTS_KEY = 'weekplate_products'
 const MEALS_KEY = 'weekplate_meals'
 const GOALS_KEY = 'weekplate_goals'
+const PLANS_KEY = 'weekplate_plans'
 const TODAY_KEY = 'weekplate_today'
+const MIGRATIONS_KEY = 'weekplate_migrations'
 
 const NUTRITION_FIELDS = [
   'caloriesPer100g',
@@ -12,7 +14,17 @@ const NUTRITION_FIELDS = [
 
 const GOAL_FIELDS = ['calories', 'protein', 'carbs', 'fat']
 
-const MEAL_TAGS = ['breakfast', 'lunch', 'dinner', 'snack', 'other']
+export const MEAL_TAG_OPTIONS = [
+  'breakfast',
+  'lunch',
+  'dinner',
+  'snack',
+  'dessert',
+]
+
+export const SLOT_IDS = ['breakfast', 'lunch', 'dinner', 'snack']
+
+const PRIMARY_SLOTS = ['breakfast', 'lunch', 'dinner']
 
 const DEFAULT_GOALS = {
   calories: 1500,
@@ -20,6 +32,9 @@ const DEFAULT_GOALS = {
   carbs: 150,
   fat: 50,
 }
+
+const MIGRATION_MEALS_TAGS = 'meals_tags_v1'
+const MIGRATION_TODAY_TO_PLANS = 'today_to_plans_v1'
 
 function createId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -43,6 +58,159 @@ function parseNumber(value) {
   }
 
   return Number.NaN
+}
+
+function readMigrations() {
+  try {
+    const raw = localStorage.getItem(MIGRATIONS_KEY)
+    if (raw == null || raw === '') {
+      return {}
+    }
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {}
+    }
+    return parsed
+  } catch {
+    return {}
+  }
+}
+
+function writeMigrations(migrations) {
+  localStorage.setItem(MIGRATIONS_KEY, JSON.stringify(migrations))
+}
+
+function setMigrationFlag(flag) {
+  const migrations = readMigrations()
+  if (migrations[flag]) {
+    return
+  }
+  migrations[flag] = true
+  writeMigrations(migrations)
+}
+
+function hasMigrationFlag(flag) {
+  return Boolean(readMigrations()[flag])
+}
+
+/** Local calendar date as YYYY-MM-DD (not UTC). */
+export function getLocalDateKey(date = new Date()) {
+  const source =
+    date instanceof Date ? date : date == null ? new Date() : new Date(date)
+
+  if (Number.isNaN(source.getTime())) {
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = String(now.getMonth() + 1).padStart(2, '0')
+    const d = String(now.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+
+  const y = source.getFullYear()
+  const m = String(source.getMonth() + 1).padStart(2, '0')
+  const d = String(source.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+export function getEmptyDayPlan() {
+  return {
+    breakfast: null,
+    lunch: null,
+    dinner: null,
+    snacks: [],
+  }
+}
+
+/** Map a meal tag to a planner slot. dessert -> snack; others map to self when valid. */
+export function tagToRecommendedSlot(tag) {
+  const normalized =
+    typeof tag === 'string' ? tag.trim().toLowerCase() : ''
+
+  if (normalized === 'dessert' || normalized === 'other') {
+    return 'snack'
+  }
+
+  if (PRIMARY_SLOTS.includes(normalized) || normalized === 'snack') {
+    return normalized
+  }
+
+  return null
+}
+
+/**
+ * Ordered unique slots: recommended from tags first, then remaining
+ * breakfast, lunch, dinner, snack.
+ */
+export function getRecommendedSlots(tags) {
+  const list = Array.isArray(tags) ? tags : []
+  const ordered = []
+  const seen = new Set()
+
+  for (const tag of list) {
+    const slot = tagToRecommendedSlot(tag)
+    if (!slot || seen.has(slot)) {
+      continue
+    }
+    seen.add(slot)
+    ordered.push(slot)
+  }
+
+  for (const slot of SLOT_IDS) {
+    if (seen.has(slot)) {
+      continue
+    }
+    seen.add(slot)
+    ordered.push(slot)
+  }
+
+  return ordered
+}
+
+function normalizeMealTag(tag) {
+  const normalized =
+    typeof tag === 'string' ? tag.trim().toLowerCase() : ''
+
+  if (normalized === 'other') {
+    return 'snack'
+  }
+
+  if (MEAL_TAG_OPTIONS.includes(normalized)) {
+    return normalized
+  }
+
+  return null
+}
+
+/** Prefer valid tags[]; else derive from legacy tag. Deduped, non-empty or null. */
+function deriveMealTags(source) {
+  if (!source || typeof source !== 'object') {
+    return null
+  }
+
+  if (Array.isArray(source.tags)) {
+    const tags = []
+    const seen = new Set()
+    for (const entry of source.tags) {
+      const tag = normalizeMealTag(entry)
+      if (!tag || seen.has(tag)) {
+        continue
+      }
+      seen.add(tag)
+      tags.push(tag)
+    }
+    if (tags.length > 0) {
+      return tags
+    }
+  }
+
+  if (typeof source.tag === 'string') {
+    const tag = normalizeMealTag(source.tag)
+    if (tag) {
+      return [tag]
+    }
+  }
+
+  return null
 }
 
 export function validateProduct(input) {
@@ -267,10 +435,11 @@ export function validateMeal(input, products) {
     errors.name = 'יש להזין שם ארוחה'
   }
 
-  const tag =
-    typeof source.tag === 'string' ? source.tag.trim().toLowerCase() : ''
-  if (!MEAL_TAGS.includes(tag)) {
-    errors.tag = 'יש לבחור סוג ארוחה'
+  const tags = deriveMealTags(source)
+  if (!tags || tags.length === 0) {
+    errors.tags = 'יש לבחור לפחות תג אחד'
+    // Temporary shim for UI still reading errors.tag
+    errors.tag = 'יש לבחור לפחות תג אחד'
   }
 
   const rawIngredients = Array.isArray(source.ingredients)
@@ -329,13 +498,80 @@ export function validateMeal(input, products) {
     errors: {},
     meal: {
       name,
-      tag,
+      tags,
       ingredients,
     },
   }
 }
 
+function migrateMealsToTags() {
+  if (hasMigrationFlag(MIGRATION_MEALS_TAGS)) {
+    return
+  }
+
+  try {
+    const raw = localStorage.getItem(MEALS_KEY)
+    if (raw == null || raw === '') {
+      setMigrationFlag(MIGRATION_MEALS_TAGS)
+      return
+    }
+
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      setMigrationFlag(MIGRATION_MEALS_TAGS)
+      return
+    }
+
+    let changed = false
+    const next = []
+
+    for (const item of parsed) {
+      if (!item || typeof item !== 'object') {
+        continue
+      }
+
+      const tags = deriveMealTags(item)
+      const hasLegacyTag = Object.prototype.hasOwnProperty.call(item, 'tag')
+      const hadTagsArray = Array.isArray(item.tags)
+
+      const migrated = { ...item }
+      if (tags) {
+        const sameTags =
+          hadTagsArray &&
+          item.tags.length === tags.length &&
+          item.tags.every((t, i) => t === tags[i])
+        if (!sameTags || hasLegacyTag) {
+          changed = true
+        }
+        migrated.tags = tags
+      } else if (hadTagsArray || hasLegacyTag) {
+        // Drop invalid tag/tags; leave as-is for validateMeal to filter later
+        if (hasLegacyTag) {
+          changed = true
+        }
+      }
+
+      if (hasLegacyTag) {
+        delete migrated.tag
+        changed = true
+      }
+
+      next.push(migrated)
+    }
+
+    if (changed) {
+      localStorage.setItem(MEALS_KEY, JSON.stringify(next))
+    }
+
+    setMigrationFlag(MIGRATION_MEALS_TAGS)
+  } catch {
+    setMigrationFlag(MIGRATION_MEALS_TAGS)
+  }
+}
+
 function readStoredMeals(products) {
+  migrateMealsToTags()
+
   try {
     const raw = localStorage.getItem(MEALS_KEY)
     if (raw == null || raw === '') {
@@ -646,8 +882,9 @@ function normalizePlannerItem(item) {
   }
 
   if (type === 'meal') {
-    if (typeof item.tag === 'string' && item.tag.trim() !== '') {
-      planned.tag = item.tag.trim().toLowerCase()
+    const tags = deriveMealTags(item)
+    if (tags) {
+      planned.tags = tags
     }
     if (typeof item.sourceMealId === 'string' && item.sourceMealId.trim() !== '') {
       planned.sourceMealId = item.sourceMealId.trim()
@@ -657,7 +894,92 @@ function normalizePlannerItem(item) {
   return planned
 }
 
-function readStoredTodayPlanner() {
+function normalizeDayPlan(plan) {
+  const empty = getEmptyDayPlan()
+  if (!plan || typeof plan !== 'object') {
+    return empty
+  }
+
+  const next = getEmptyDayPlan()
+  for (const slot of PRIMARY_SLOTS) {
+    const item = normalizePlannerItem(plan[slot])
+    next[slot] = item
+  }
+
+  const rawSnacks = Array.isArray(plan.snacks) ? plan.snacks : []
+  const snacks = []
+  const seenIds = new Set()
+
+  for (const slot of PRIMARY_SLOTS) {
+    if (next[slot]) {
+      seenIds.add(next[slot].id)
+    }
+  }
+
+  for (const item of rawSnacks) {
+    const normalized = normalizePlannerItem(item)
+    if (!normalized) {
+      continue
+    }
+    if (seenIds.has(normalized.id)) {
+      continue
+    }
+    seenIds.add(normalized.id)
+    snacks.push(normalized)
+  }
+
+  next.snacks = snacks
+  return next
+}
+
+/** Flatten a day plan into a list for calculatePlannerNutrition. */
+export function flattenDayPlan(plan) {
+  const normalized = normalizeDayPlan(plan)
+  const items = []
+
+  for (const slot of PRIMARY_SLOTS) {
+    if (normalized[slot]) {
+      items.push(normalized[slot])
+    }
+  }
+
+  for (const snack of normalized.snacks) {
+    items.push(snack)
+  }
+
+  return items
+}
+
+function readStoredPlans() {
+  try {
+    const raw = localStorage.getItem(PLANS_KEY)
+    if (raw == null || raw === '') {
+      return {}
+    }
+
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {}
+    }
+
+    const plans = {}
+    for (const [dateKey, plan] of Object.entries(parsed)) {
+      if (typeof dateKey !== 'string' || dateKey.trim() === '') {
+        continue
+      }
+      plans[dateKey] = normalizeDayPlan(plan)
+    }
+    return plans
+  } catch {
+    return {}
+  }
+}
+
+function writeStoredPlans(plans) {
+  localStorage.setItem(PLANS_KEY, JSON.stringify(plans))
+}
+
+function readLegacyTodayPlanner() {
   try {
     const raw = localStorage.getItem(TODAY_KEY)
     if (raw == null || raw === '') {
@@ -680,7 +1002,6 @@ function readStoredTodayPlanner() {
       if (seenIds.has(normalized.id)) {
         continue
       }
-
       seenIds.add(normalized.id)
       items.push(normalized)
     }
@@ -691,39 +1012,125 @@ function readStoredTodayPlanner() {
   }
 }
 
-export function getTodayPlanner() {
-  return readStoredTodayPlanner()
+function assignLegacyItemToPlan(plan, item) {
+  if (!item) {
+    return
+  }
+
+  if (item.type === 'meal') {
+    const tags = Array.isArray(item.tags) ? item.tags : []
+    const primaryTag = tags.find((tag) => PRIMARY_SLOTS.includes(tag))
+    if (primaryTag && plan[primaryTag] == null) {
+      plan[primaryTag] = item
+      return
+    }
+  }
+
+  plan.snacks.push(item)
 }
 
-export function saveTodayPlanner(items) {
-  if (!Array.isArray(items)) {
-    throw new Error('today planner must be an array')
+function migrateTodayToPlans() {
+  if (hasMigrationFlag(MIGRATION_TODAY_TO_PLANS)) {
+    return
   }
 
-  const normalized = []
-  const seenIds = new Set()
+  try {
+    const legacyItems = readLegacyTodayPlanner()
+    if (legacyItems.length > 0) {
+      const plans = readStoredPlans()
+      const dateKey = getLocalDateKey()
+      const plan = plans[dateKey]
+        ? normalizeDayPlan(plans[dateKey])
+        : getEmptyDayPlan()
 
-  for (const item of items) {
-    const next = normalizePlannerItem(item)
-    if (!next) {
-      continue
+      for (const item of legacyItems) {
+        assignLegacyItemToPlan(plan, item)
+      }
+
+      plans[dateKey] = plan
+      writeStoredPlans(plans)
     }
-    if (seenIds.has(next.id)) {
-      continue
+
+    localStorage.removeItem(TODAY_KEY)
+    setMigrationFlag(MIGRATION_TODAY_TO_PLANS)
+  } catch {
+    try {
+      localStorage.removeItem(TODAY_KEY)
+    } catch {
+      // ignore
     }
-    seenIds.add(next.id)
-    normalized.push(next)
+    setMigrationFlag(MIGRATION_TODAY_TO_PLANS)
+  }
+}
+
+function ensureMigrations() {
+  migrateMealsToTags()
+  migrateTodayToPlans()
+}
+
+export function getAllPlans() {
+  ensureMigrations()
+  return readStoredPlans()
+}
+
+export function getDayPlan(dateKey) {
+  ensureMigrations()
+  const key =
+    typeof dateKey === 'string' && dateKey.trim() !== ''
+      ? dateKey.trim()
+      : getLocalDateKey()
+
+  const plans = readStoredPlans()
+  if (!plans[key]) {
+    return getEmptyDayPlan()
   }
 
-  localStorage.setItem(TODAY_KEY, JSON.stringify(normalized))
+  return normalizeDayPlan(plans[key])
+}
+
+export function saveDayPlan(dateKey, plan) {
+  ensureMigrations()
+  const key =
+    typeof dateKey === 'string' && dateKey.trim() !== ''
+      ? dateKey.trim()
+      : getLocalDateKey()
+
+  const plans = readStoredPlans()
+  const normalized = normalizeDayPlan(plan)
+  plans[key] = normalized
+  writeStoredPlans(plans)
   return normalized
 }
 
+function ensureDayExists(dateKey) {
+  const key =
+    typeof dateKey === 'string' && dateKey.trim() !== ''
+      ? dateKey.trim()
+      : getLocalDateKey()
+
+  const plans = readStoredPlans()
+  if (!plans[key]) {
+    plans[key] = getEmptyDayPlan()
+    writeStoredPlans(plans)
+  }
+  return key
+}
+
+function normalizeSlotId(slot) {
+  if (typeof slot !== 'string') {
+    return null
+  }
+  const normalized = slot.trim().toLowerCase()
+  if (PRIMARY_SLOTS.includes(normalized) || normalized === 'snack') {
+    return normalized
+  }
+  return null
+}
+
 /**
- * Deep-clones a saved meal into an independent Today planner item.
- * Quantities live only on the planner snapshot — never mutate getMeals().
+ * Deep-clones a saved meal into a planner snapshot (does not persist).
  */
-export function addMealToToday(meal, products) {
+export function createMealSnapshot(meal, products) {
   const source = meal && typeof meal === 'object' ? meal : null
   if (!source) {
     return { ok: false, errors: { meal: 'הארוחה לא נמצאה' }, item: null }
@@ -760,22 +1167,22 @@ export function addMealToToday(meal, products) {
     ingredients,
   }
 
-  if (typeof source.tag === 'string' && source.tag.trim() !== '') {
-    item.tag = source.tag.trim().toLowerCase()
+  const tags = deriveMealTags(source)
+  if (tags) {
+    item.tags = tags
   }
 
   if (typeof source.id === 'string' && source.id.trim() !== '') {
     item.sourceMealId = source.id.trim()
   }
 
-  const planner = getTodayPlanner()
-  planner.push(item)
-  saveTodayPlanner(planner)
-
   return { ok: true, errors: {}, item }
 }
 
-export function addProductToToday(product, quantityGrams) {
+/**
+ * Creates a product planner snapshot (does not persist).
+ */
+export function createProductSnapshot(product, quantityGrams) {
   const source = product && typeof product === 'object' ? product : null
   if (!source || typeof source.id !== 'string' || source.id.trim() === '') {
     return { ok: false, errors: { product: 'המוצר לא נמצא' }, item: null }
@@ -815,18 +1222,245 @@ export function addProductToToday(product, quantityGrams) {
     ingredients: [ingredient],
   }
 
-  const planner = getTodayPlanner()
-  planner.push(item)
-  saveTodayPlanner(planner)
-
   return { ok: true, errors: {}, item }
 }
 
+export function setSlotItem(dateKey, slot, item) {
+  ensureMigrations()
+  const key = ensureDayExists(dateKey)
+  const slotId = normalizeSlotId(slot)
+
+  if (!PRIMARY_SLOTS.includes(slotId)) {
+    return {
+      ok: false,
+      errors: { slot: 'חריץ לא תקין' },
+      plan: getDayPlan(key),
+    }
+  }
+
+  const normalizedItem = item == null ? null : normalizePlannerItem(item)
+  if (item != null && !normalizedItem) {
+    return {
+      ok: false,
+      errors: { item: 'פריט לא תקין' },
+      plan: getDayPlan(key),
+    }
+  }
+
+  const plan = getDayPlan(key)
+  plan[slotId] = normalizedItem
+  const saved = saveDayPlan(key, plan)
+  return { ok: true, errors: {}, plan: saved, item: normalizedItem }
+}
+
+export function addSnack(dateKey, item) {
+  ensureMigrations()
+  const key = ensureDayExists(dateKey)
+  const normalizedItem = normalizePlannerItem(item)
+
+  if (!normalizedItem) {
+    return {
+      ok: false,
+      errors: { item: 'פריט לא תקין' },
+      plan: getDayPlan(key),
+    }
+  }
+
+  const plan = getDayPlan(key)
+  const existingIds = new Set(flattenDayPlan(plan).map((entry) => entry.id))
+  if (existingIds.has(normalizedItem.id)) {
+    return {
+      ok: false,
+      errors: { item: 'הפריט כבר קיים' },
+      plan,
+    }
+  }
+
+  plan.snacks.push(normalizedItem)
+  const saved = saveDayPlan(key, plan)
+  return { ok: true, errors: {}, plan: saved, item: normalizedItem }
+}
+
+export function replaceSlotItem(dateKey, slot, item) {
+  return setSlotItem(dateKey, slot, item)
+}
+
 /**
- * Updates a single ingredient quantity on a Today planner item only.
- * Does not touch saved meals in weekplate_meals.
+ * Add a meal snapshot to a day plan slot.
+ * Primary slots: one item only — returns needsReplace if occupied unless replaceExplicitly.
+ * Snack slot: always appends.
  */
-export function updateTodayItemQuantity(itemId, ingredientIndex, quantityGrams) {
+export function addMealToDayPlan(dateKey, meal, slot, products, options = {}) {
+  ensureMigrations()
+  const slotId = normalizeSlotId(slot)
+  if (!slotId) {
+    return {
+      ok: false,
+      errors: { slot: 'יש לבחור חריץ' },
+      item: null,
+      needsReplace: false,
+    }
+  }
+
+  const snapshot = createMealSnapshot(meal, products)
+  if (!snapshot.ok) {
+    return { ...snapshot, needsReplace: false }
+  }
+
+  const key = ensureDayExists(dateKey)
+  const plan = getDayPlan(key)
+  const replaceExplicitly = Boolean(options && options.replaceExplicitly)
+
+  if (slotId === 'snack') {
+    const result = addSnack(key, snapshot.item)
+    if (!result.ok) {
+      return {
+        ok: false,
+        errors: result.errors,
+        item: null,
+        needsReplace: false,
+      }
+    }
+    return { ok: true, errors: {}, item: result.item, needsReplace: false }
+  }
+
+  if (plan[slotId] != null && !replaceExplicitly) {
+    return {
+      ok: false,
+      errors: {},
+      item: null,
+      needsReplace: true,
+      existing: plan[slotId],
+      slot: slotId,
+    }
+  }
+
+  const result = setSlotItem(key, slotId, snapshot.item)
+  if (!result.ok) {
+    return {
+      ok: false,
+      errors: result.errors,
+      item: null,
+      needsReplace: false,
+    }
+  }
+
+  return { ok: true, errors: {}, item: result.item, needsReplace: false }
+}
+
+/**
+ * Add a product snapshot to a day plan slot (same occupancy rules as meals).
+ */
+export function addProductToDayPlan(
+  dateKey,
+  product,
+  quantityGrams,
+  slot,
+  options = {},
+) {
+  ensureMigrations()
+  const slotId = normalizeSlotId(slot)
+  if (!slotId) {
+    return {
+      ok: false,
+      errors: { slot: 'יש לבחור חריץ' },
+      item: null,
+      needsReplace: false,
+    }
+  }
+
+  const snapshot = createProductSnapshot(product, quantityGrams)
+  if (!snapshot.ok) {
+    return { ...snapshot, needsReplace: false }
+  }
+
+  const key = ensureDayExists(dateKey)
+  const plan = getDayPlan(key)
+  const replaceExplicitly = Boolean(options && options.replaceExplicitly)
+
+  if (slotId === 'snack') {
+    const result = addSnack(key, snapshot.item)
+    if (!result.ok) {
+      return {
+        ok: false,
+        errors: result.errors,
+        item: null,
+        needsReplace: false,
+      }
+    }
+    return { ok: true, errors: {}, item: result.item, needsReplace: false }
+  }
+
+  if (plan[slotId] != null && !replaceExplicitly) {
+    return {
+      ok: false,
+      errors: {},
+      item: null,
+      needsReplace: true,
+      existing: plan[slotId],
+      slot: slotId,
+    }
+  }
+
+  const result = setSlotItem(key, slotId, snapshot.item)
+  if (!result.ok) {
+    return {
+      ok: false,
+      errors: result.errors,
+      item: null,
+      needsReplace: false,
+    }
+  }
+
+  return { ok: true, errors: {}, item: result.item, needsReplace: false }
+}
+
+function findPlannerItemLocation(plan, itemId) {
+  for (const slot of PRIMARY_SLOTS) {
+    if (plan[slot] && plan[slot].id === itemId) {
+      return { kind: 'slot', slot }
+    }
+  }
+
+  const snackIndex = plan.snacks.findIndex((item) => item.id === itemId)
+  if (snackIndex !== -1) {
+    return { kind: 'snack', snackIndex }
+  }
+
+  return null
+}
+
+export function removePlannerItem(dateKey, itemId) {
+  ensureMigrations()
+  if (typeof itemId !== 'string' || itemId.trim() === '') {
+    return false
+  }
+
+  const key = ensureDayExists(dateKey)
+  const plan = getDayPlan(key)
+  const location = findPlannerItemLocation(plan, itemId)
+  if (!location) {
+    return false
+  }
+
+  if (location.kind === 'slot') {
+    plan[location.slot] = null
+  } else {
+    plan.snacks.splice(location.snackIndex, 1)
+  }
+
+  saveDayPlan(key, plan)
+  return true
+}
+
+export function updatePlannerItemQuantity(
+  dateKey,
+  itemId,
+  ingredientIndex,
+  quantityGrams,
+) {
+  ensureMigrations()
+
   if (typeof itemId !== 'string' || itemId.trim() === '') {
     return { ok: false, errors: { id: 'הפריט לא נמצא' }, item: null }
   }
@@ -848,13 +1482,18 @@ export function updateTodayItemQuantity(itemId, ingredientIndex, quantityGrams) 
     }
   }
 
-  const planner = getTodayPlanner()
-  const index = planner.findIndex((item) => item.id === itemId)
-  if (index === -1) {
+  const key = ensureDayExists(dateKey)
+  const plan = getDayPlan(key)
+  const location = findPlannerItemLocation(plan, itemId)
+  if (!location) {
     return { ok: false, errors: { id: 'הפריט לא נמצא' }, item: null }
   }
 
-  const item = planner[index]
+  const item =
+    location.kind === 'slot'
+      ? plan[location.slot]
+      : plan.snacks[location.snackIndex]
+
   if (!item.ingredients[ingredientIndex]) {
     return {
       ok: false,
@@ -863,8 +1502,6 @@ export function updateTodayItemQuantity(itemId, ingredientIndex, quantityGrams) 
     }
   }
 
-  // Replace ingredient object so callers cannot retain a shared reference
-  // to pre-update state, and never touch meal storage.
   const nextIngredients = item.ingredients.map((ingredient, i) => {
     if (i !== ingredientIndex) {
       return { ...ingredient }
@@ -880,24 +1517,90 @@ export function updateTodayItemQuantity(itemId, ingredientIndex, quantityGrams) 
     ingredients: nextIngredients,
   }
 
-  planner[index] = nextItem
-  saveTodayPlanner(planner)
+  if (location.kind === 'slot') {
+    plan[location.slot] = nextItem
+  } else {
+    plan.snacks[location.snackIndex] = nextItem
+  }
 
+  saveDayPlan(key, plan)
   return { ok: true, errors: {}, item: nextItem }
 }
 
-export function removeTodayItem(itemId) {
-  if (typeof itemId !== 'string' || itemId.trim() === '') {
-    return false
-  }
+// --- Temporary Today compatibility shims (flat list over today's date plan) ---
 
-  const planner = getTodayPlanner()
-  const next = planner.filter((item) => item.id !== itemId)
-
-  if (next.length === planner.length) {
-    return false
-  }
-
-  saveTodayPlanner(next)
-  return true
+export function getTodayPlanner() {
+  return flattenDayPlan(getDayPlan(getLocalDateKey()))
 }
+
+/** @deprecated Prefer saveDayPlan. Writes all items into today's snacks and clears primary slots. */
+export function saveTodayPlanner(items) {
+  if (!Array.isArray(items)) {
+    throw new Error('today planner must be an array')
+  }
+
+  const plan = getEmptyDayPlan()
+  const seenIds = new Set()
+
+  for (const item of items) {
+    const next = normalizePlannerItem(item)
+    if (!next) {
+      continue
+    }
+    if (seenIds.has(next.id)) {
+      continue
+    }
+    seenIds.add(next.id)
+    plan.snacks.push(next)
+  }
+
+  return flattenDayPlan(saveDayPlan(getLocalDateKey(), plan))
+}
+
+/**
+ * Temporary shim: adds meal to today's recommended slot.
+ * If primary slot is occupied, falls back to snacks (never silent replace).
+ */
+export function addMealToToday(meal, products) {
+  const dateKey = getLocalDateKey()
+  const tags = deriveMealTags(meal) || []
+  const recommended = getRecommendedSlots(tags)
+  const slot = recommended[0] || 'snack'
+
+  const result = addMealToDayPlan(dateKey, meal, slot, products)
+  if (result.ok) {
+    return result
+  }
+
+  if (result.needsReplace && slot !== 'snack') {
+    return addMealToDayPlan(dateKey, meal, 'snack', products)
+  }
+
+  return result
+}
+
+/** Temporary shim: adds product to today's snacks. */
+export function addProductToToday(product, quantityGrams) {
+  return addProductToDayPlan(
+    getLocalDateKey(),
+    product,
+    quantityGrams,
+    'snack',
+  )
+}
+
+export function updateTodayItemQuantity(itemId, ingredientIndex, quantityGrams) {
+  return updatePlannerItemQuantity(
+    getLocalDateKey(),
+    itemId,
+    ingredientIndex,
+    quantityGrams,
+  )
+}
+
+export function removeTodayItem(itemId) {
+  return removePlannerItem(getLocalDateKey(), itemId)
+}
+
+// Run migrations when the storage module loads.
+ensureMigrations()

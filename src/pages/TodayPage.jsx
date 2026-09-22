@@ -1,13 +1,18 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import {
-  addMealToToday,
-  addProductToToday,
+  addMealToDayPlan,
+  addProductToDayPlan,
+  flattenDayPlan,
+  getDayPlan,
   getGoals,
+  getLocalDateKey,
   getMeals,
   getProducts,
-  getTodayPlanner,
-  removeTodayItem,
-  updateTodayItemQuantity,
+  getRecommendedSlots,
+  removePlannerItem,
+  SLOT_IDS,
+  tagToRecommendedSlot,
+  updatePlannerItemQuantity,
 } from '../services/storage.js'
 import {
   calculateMealNutrition,
@@ -29,6 +34,7 @@ const MEAL_FILTER_TAGS = [
   { id: 'lunch', label: 'ארוחת צהריים' },
   { id: 'dinner', label: 'ארוחת ערב' },
   { id: 'snack', label: 'נשנוש' },
+  { id: 'dessert', label: 'קינוח' },
 ]
 
 const TAG_LABELS = {
@@ -36,8 +42,24 @@ const TAG_LABELS = {
   lunch: 'ארוחת צהריים',
   dinner: 'ארוחת ערב',
   snack: 'נשנוש',
-  other: 'אחר',
+  dessert: 'קינוח',
 }
+
+const SLOT_LABELS = {
+  breakfast: 'ארוחת בוקר',
+  lunch: 'ארוחת צהריים',
+  dinner: 'ארוחת ערב',
+  snack: 'נשנוש',
+}
+
+const SLOT_SECTIONS = [
+  { id: 'breakfast', title: 'ארוחת בוקר', kind: 'primary' },
+  { id: 'lunch', title: 'ארוחת צהריים', kind: 'primary' },
+  { id: 'dinner', title: 'ארוחת ערב', kind: 'primary' },
+  { id: 'snacks', title: 'נשנושים', kind: 'snacks' },
+]
+
+const HEBREW_WEEKDAYS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳']
 
 function formatDisplay(value) {
   const decimals = value !== 0 && Math.abs(value) < 10 ? 1 : 0
@@ -76,6 +98,66 @@ function NutritionSummary({ nutrition }) {
   )
 }
 
+function parseDateKey(dateKey) {
+  const parts = String(dateKey).split('-').map(Number)
+  if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) {
+    return new Date()
+  }
+  const [year, month, day] = parts
+  return new Date(year, month - 1, day)
+}
+
+function addDays(date, amount) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + amount)
+  return next
+}
+
+function getWeekStartKey(dateKey) {
+  const date = parseDateKey(dateKey)
+  const weekStart = addDays(date, -date.getDay())
+  return getLocalDateKey(weekStart)
+}
+
+function getWeekDayKeys(weekStartKey) {
+  const start = parseDateKey(weekStartKey)
+  return Array.from({ length: 7 }, (_, index) =>
+    getLocalDateKey(addDays(start, index)),
+  )
+}
+
+function mealTags(meal) {
+  if (Array.isArray(meal.tags) && meal.tags.length > 0) {
+    return meal.tags
+  }
+  if (typeof meal.tag === 'string' && meal.tag.trim() !== '') {
+    return [meal.tag]
+  }
+  return []
+}
+
+/** Slots recommended from tags only (not the full SLOT_IDS padding). */
+function highlightedSlotsFromTags(tags) {
+  const ordered = []
+  const seen = new Set()
+  for (const tag of tags) {
+    const slot = tagToRecommendedSlot(tag)
+    if (!slot || seen.has(slot)) {
+      continue
+    }
+    seen.add(slot)
+    ordered.push(slot)
+  }
+  return ordered
+}
+
+function formatTagList(tags) {
+  return tags
+    .map((tag) => TAG_LABELS[tag] || tag)
+    .filter(Boolean)
+    .join(' · ')
+}
+
 function ingredientLabel(ingredient, productsById) {
   if (
     typeof ingredient.productName === 'string' &&
@@ -92,11 +174,156 @@ function ingredientLabel(ingredient, productsById) {
   return 'מוצר לא זמין'
 }
 
+function PlannerItemCard({
+  item,
+  displayItem,
+  products,
+  productsById,
+  quantityDrafts,
+  itemErrors,
+  onQuantityDraftChange,
+  onCommitQuantity,
+  onRemove,
+}) {
+  const nutrition = calculatePlannerNutrition([displayItem], products)
+
+  function draftKey(ingredientIndex) {
+    return `${item.id}:${ingredientIndex}`
+  }
+
+  function getQuantityDraft(ingredientIndex) {
+    const key = draftKey(ingredientIndex)
+    if (Object.prototype.hasOwnProperty.call(quantityDrafts, key)) {
+      return quantityDrafts[key]
+    }
+    return String(item.ingredients[ingredientIndex].quantityGrams)
+  }
+
+  function getEffectiveQuantity(ingredientIndex) {
+    const draft = getQuantityDraft(ingredientIndex)
+    const parsed = Number(typeof draft === 'string' ? draft.trim() : draft)
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed
+    }
+    return item.ingredients[ingredientIndex].quantityGrams
+  }
+
+  const tags = mealTags(item)
+
+  return (
+    <li className="today-item-card">
+      <div className="today-item-card__top">
+        <div className="today-item-card__info">
+          {item.type === 'meal' && tags.length > 0 ? (
+            <span className="today-item-card__tag">{formatTagList(tags)}</span>
+          ) : item.type === 'product' ? (
+            <span className="today-item-card__tag">מוצר</span>
+          ) : null}
+          <span className="today-item-card__name">{item.name}</span>
+          <NutritionSummary nutrition={nutrition} />
+        </div>
+        <button
+          type="button"
+          className="today-item-card__delete"
+          onClick={() => onRemove(item.id)}
+        >
+          מחיקה
+        </button>
+      </div>
+
+      <ul className="today-ingredient-list">
+        {item.ingredients.map((ingredient, ingredientIndex) => {
+          const key = draftKey(ingredientIndex)
+          const draftValue = getQuantityDraft(ingredientIndex)
+          const error = itemErrors[key]
+          const inputId = `today-qty-${item.id}-${ingredientIndex}`
+          const errorId = `${inputId}-error`
+          const ingredientNutrition = calculateProductNutrition(
+            productsById.get(ingredient.productId) || {
+              caloriesPer100g: ingredient.caloriesPer100g,
+              proteinPer100g: ingredient.proteinPer100g,
+              carbsPer100g: ingredient.carbsPer100g,
+              fatPer100g: ingredient.fatPer100g,
+            },
+            getEffectiveQuantity(ingredientIndex),
+          )
+
+          return (
+            <li key={key} className="today-ingredient-row">
+              <div className="today-ingredient-row__main">
+                <span className="today-ingredient-row__name">
+                  {ingredientLabel(ingredient, productsById)}
+                </span>
+                <div className="today-ingredient-row__qty">
+                  <label className="visually-hidden" htmlFor={inputId}>
+                    כמות בגרם
+                  </label>
+                  <input
+                    id={inputId}
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="any"
+                    className="input-ltr today-ingredient-row__qty-input"
+                    value={draftValue}
+                    onChange={(event) =>
+                      onQuantityDraftChange(
+                        item.id,
+                        ingredientIndex,
+                        event.target.value,
+                      )
+                    }
+                    onBlur={(event) =>
+                      onCommitQuantity(
+                        item.id,
+                        ingredientIndex,
+                        event.target.value,
+                      )
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        onCommitQuantity(
+                          item.id,
+                          ingredientIndex,
+                          event.currentTarget.value,
+                        )
+                        event.currentTarget.blur()
+                      }
+                    }}
+                    aria-invalid={Boolean(error)}
+                    aria-describedby={error ? errorId : undefined}
+                  />
+                  <span className="today-ingredient-row__unit">גרם</span>
+                </div>
+                <span className="today-ingredient-row__kcal">
+                  <Num>{formatMacro(ingredientNutrition.calories)}</Num>
+                  {' קל׳'}
+                </span>
+              </div>
+              {error ? (
+                <p id={errorId} className="product-field__error">
+                  {error}
+                </p>
+              ) : null}
+            </li>
+          )
+        })}
+      </ul>
+    </li>
+  )
+}
+
 function TodayPage() {
+  const todayKey = getLocalDateKey()
   const [goals] = useState(() => getGoals())
   const [products] = useState(() => getProducts())
   const [meals] = useState(() => getMeals())
-  const [plannerItems, setPlannerItems] = useState(() => getTodayPlanner())
+  const [selectedDateKey, setSelectedDateKey] = useState(todayKey)
+  const [weekStartKey, setWeekStartKey] = useState(() =>
+    getWeekStartKey(todayKey),
+  )
+  const [dayPlan, setDayPlan] = useState(() => getDayPlan(todayKey))
 
   const [view, setView] = useState('today')
   const [addTab, setAddTab] = useState('meals')
@@ -107,35 +334,185 @@ function TodayPage() {
   const [quantityDrafts, setQuantityDrafts] = useState({})
   const [productErrors, setProductErrors] = useState({})
   const [itemErrors, setItemErrors] = useState({})
+  const [pendingAdd, setPendingAdd] = useState(null)
+  const [preferredSlot, setPreferredSlot] = useState(null)
 
+  const dateInputRef = useRef(null)
   const productsById = new Map(products.map((product) => [product.id, product]))
+  const isSelectedToday = selectedDateKey === todayKey
+  const weekDayKeys = getWeekDayKeys(weekStartKey)
+  const plannerItems = flattenDayPlan(dayPlan)
 
-  function refreshPlanner() {
-    setPlannerItems(getTodayPlanner())
+  function refreshPlan(dateKey = selectedDateKey) {
+    setDayPlan(getDayPlan(dateKey))
   }
 
-  function openAdd() {
+  function selectDate(dateKey) {
+    const nextKey =
+      typeof dateKey === 'string' && dateKey.trim() !== ''
+        ? dateKey.trim()
+        : todayKey
+    setSelectedDateKey(nextKey)
+    setWeekStartKey(getWeekStartKey(nextKey))
+    setDayPlan(getDayPlan(nextKey))
+    setQuantityDrafts({})
+    setItemErrors({})
+  }
+
+  function shiftWeek(direction) {
+    const nextStart = addDays(parseDateKey(weekStartKey), direction * 7)
+    const nextStartKey = getLocalDateKey(nextStart)
+    setWeekStartKey(nextStartKey)
+  }
+
+  function goToToday() {
+    selectDate(todayKey)
+  }
+
+  function openAdd(slotHint = null) {
     setAddTab('meals')
     setMealQuery('')
     setTagFilter('all')
     setProductQuery('')
     setProductQuantities({})
     setProductErrors({})
+    setPendingAdd(null)
+    setPreferredSlot(slotHint)
     setView('add')
   }
 
   function closeAdd() {
     setView('today')
     setProductErrors({})
+    setPendingAdd(null)
+    setPreferredSlot(null)
   }
 
-  function handleAddMeal(meal) {
-    const result = addMealToToday(meal, products)
-    if (!result.ok) {
+  function openSlotPicker(nextPending) {
+    setPendingAdd(nextPending)
+    setView('slot')
+  }
+
+  function clearItemDrafts(itemId) {
+    setQuantityDrafts((current) => {
+      const next = { ...current }
+      for (const key of Object.keys(next)) {
+        if (key.startsWith(`${itemId}:`)) {
+          delete next[key]
+        }
+      }
+      return next
+    })
+    setItemErrors((current) => {
+      const next = { ...current }
+      for (const key of Object.keys(next)) {
+        if (key.startsWith(`${itemId}:`)) {
+          delete next[key]
+        }
+      }
+      return next
+    })
+  }
+
+  function confirmReplace(existing) {
+    const existingName =
+      existing && typeof existing.name === 'string' && existing.name.trim()
+        ? existing.name.trim()
+        : 'הפריט הקיים'
+    return window.confirm(
+      `החריץ תפוס (${existingName}). להחליף?`,
+    )
+  }
+
+  function applyAddResult(result, retryWithReplace) {
+    if (result.ok) {
+      refreshPlan()
+      closeAdd()
       return
     }
-    refreshPlanner()
-    closeAdd()
+
+    if (result.needsReplace) {
+      if (!confirmReplace(result.existing)) {
+        return
+      }
+      retryWithReplace()
+      return
+    }
+
+    return result
+  }
+
+  function handleAddMealToSlot(meal, slot, options = {}) {
+    const result = addMealToDayPlan(
+      selectedDateKey,
+      meal,
+      slot,
+      products,
+      options,
+    )
+    const error = applyAddResult(result, () =>
+      handleAddMealToSlot(meal, slot, { replaceExplicitly: true }),
+    )
+    if (error && !error.ok && !error.needsReplace) {
+      window.alert(
+        error.errors?.meal ||
+          error.errors?.ingredients ||
+          error.errors?.name ||
+          error.errors?.slot ||
+          'לא ניתן להוסיף את הארוחה',
+      )
+    }
+  }
+
+  function handleAddProductToSlot(product, quantityValue, slot, options = {}) {
+    const result = addProductToDayPlan(
+      selectedDateKey,
+      product,
+      quantityValue,
+      slot,
+      options,
+    )
+
+    if (result.ok) {
+      refreshPlan()
+      closeAdd()
+      return
+    }
+
+    if (result.needsReplace) {
+      if (!confirmReplace(result.existing)) {
+        return
+      }
+      handleAddProductToSlot(product, quantityValue, slot, {
+        replaceExplicitly: true,
+      })
+      return
+    }
+
+    setProductErrors((current) => ({
+      ...current,
+      [product.id]:
+        result.errors.quantityGrams ||
+        result.errors.product ||
+        result.errors.name ||
+        result.errors.slot ||
+        'לא ניתן להוסיף את המוצר',
+    }))
+    setView('add')
+    setAddTab('products')
+  }
+
+  function handlePickMeal(meal) {
+    const fromTags = getRecommendedSlots(mealTags(meal))
+    const recommendedSlots = preferredSlot
+      ? [preferredSlot, ...fromTags.filter((slot) => slot !== preferredSlot)]
+      : fromTags
+
+    openSlotPicker({
+      kind: 'meal',
+      meal,
+      recommendedSlots,
+    })
   }
 
   function getProductQuantity(productId) {
@@ -158,43 +535,61 @@ function TodayPage() {
     })
   }
 
-  function handleAddProduct(product) {
+  function handlePickProduct(product) {
     const quantityValue = getProductQuantity(product.id)
-    const result = addProductToToday(product, quantityValue)
-
-    if (!result.ok) {
+    const preview = Number(
+      typeof quantityValue === 'string' ? quantityValue.trim() : quantityValue,
+    )
+    if (!Number.isFinite(preview) || preview <= 0) {
       setProductErrors((current) => ({
         ...current,
-        [product.id]:
-          result.errors.quantityGrams ||
-          result.errors.product ||
-          result.errors.name ||
-          'לא ניתן להוסיף את המוצר',
+        [product.id]: 'הכמות חייבת להיות גדולה מאפס',
       }))
       return
     }
 
-    refreshPlanner()
-    closeAdd()
+    openSlotPicker({
+      kind: 'product',
+      product,
+      quantityValue,
+      recommendedSlots: preferredSlot
+        ? [
+            preferredSlot,
+            ...SLOT_IDS.filter((slot) => slot !== preferredSlot),
+          ]
+        : ['snack', ...SLOT_IDS.filter((slot) => slot !== 'snack')],
+    })
+  }
+
+  function handleSelectSlot(slot) {
+    if (!pendingAdd) {
+      return
+    }
+
+    if (pendingAdd.kind === 'meal') {
+      handleAddMealToSlot(pendingAdd.meal, slot)
+      return
+    }
+
+    handleAddProductToSlot(
+      pendingAdd.product,
+      pendingAdd.quantityValue,
+      slot,
+    )
   }
 
   function draftKey(itemId, ingredientIndex) {
     return `${itemId}:${ingredientIndex}`
   }
 
-  function getQuantityDraft(item, ingredientIndex) {
+  function getEffectiveQuantity(item, ingredientIndex) {
     const key = draftKey(item.id, ingredientIndex)
     if (Object.prototype.hasOwnProperty.call(quantityDrafts, key)) {
-      return quantityDrafts[key]
-    }
-    return String(item.ingredients[ingredientIndex].quantityGrams)
-  }
-
-  function getEffectiveQuantity(item, ingredientIndex) {
-    const draft = getQuantityDraft(item, ingredientIndex)
-    const parsed = Number(typeof draft === 'string' ? draft.trim() : draft)
-    if (Number.isFinite(parsed) && parsed > 0) {
-      return parsed
+      const draft = quantityDrafts[key]
+      const parsed = Number(typeof draft === 'string' ? draft.trim() : draft)
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return parsed
+      }
     }
     return item.ingredients[ingredientIndex].quantityGrams
   }
@@ -239,7 +634,12 @@ function TodayPage() {
 
   function commitQuantity(itemId, ingredientIndex, rawValue) {
     const key = draftKey(itemId, ingredientIndex)
-    const result = updateTodayItemQuantity(itemId, ingredientIndex, rawValue)
+    const result = updatePlannerItemQuantity(
+      selectedDateKey,
+      itemId,
+      ingredientIndex,
+      rawValue,
+    )
 
     if (!result.ok) {
       setItemErrors((current) => ({
@@ -251,44 +651,34 @@ function TodayPage() {
 
     clearQuantityDraft(key)
     clearItemError(key)
-    refreshPlanner()
+    refreshPlan()
   }
 
-  const displayPlanner = plannerWithDrafts(plannerItems)
-  const current = calculatePlannerNutrition(displayPlanner, products)
-  const remaining = remainingNutrition(current, goals)
-
   function handleRemoveItem(itemId) {
-    const confirmed = window.confirm('להסיר מהיום?')
+    const confirmed = window.confirm(
+      isSelectedToday ? 'להסיר מהיום?' : 'להסיר מיום זה?',
+    )
     if (!confirmed) {
       return
     }
 
-    removeTodayItem(itemId)
-    setQuantityDrafts((current) => {
-      const next = { ...current }
-      for (const key of Object.keys(next)) {
-        if (key.startsWith(`${itemId}:`)) {
-          delete next[key]
-        }
-      }
-      return next
-    })
-    setItemErrors((current) => {
-      const next = { ...current }
-      for (const key of Object.keys(next)) {
-        if (key.startsWith(`${itemId}:`)) {
-          delete next[key]
-        }
-      }
-      return next
-    })
-    refreshPlanner()
+    removePlannerItem(selectedDateKey, itemId)
+    clearItemDrafts(itemId)
+    refreshPlan()
   }
+
+  const displayPlanner = plannerWithDrafts(plannerItems)
+  const displayById = new Map(
+    displayPlanner.map((item) => [item.id, item]),
+  )
+  const current = calculatePlannerNutrition(displayPlanner, products)
+  const remaining = remainingNutrition(current, goals)
 
   const normalizedMealQuery = mealQuery.trim().toLowerCase()
   const visibleMeals = meals.filter((meal) => {
-    const matchesTag = tagFilter === 'all' || meal.tag === tagFilter
+    const tags = mealTags(meal)
+    const matchesTag =
+      tagFilter === 'all' || tags.includes(tagFilter)
     if (!matchesTag) {
       return false
     }
@@ -305,6 +695,82 @@ function TodayPage() {
       )
     : products
 
+  const slotOptions =
+    pendingAdd && Array.isArray(pendingAdd.recommendedSlots)
+      ? pendingAdd.recommendedSlots
+      : preferredSlot
+        ? [preferredSlot, ...SLOT_IDS.filter((slot) => slot !== preferredSlot)]
+        : [...SLOT_IDS]
+
+  let recommendedSet = new Set()
+  if (pendingAdd?.kind === 'meal') {
+    recommendedSet = new Set(highlightedSlotsFromTags(mealTags(pendingAdd.meal)))
+    if (preferredSlot) {
+      recommendedSet.add(preferredSlot)
+    }
+  } else if (pendingAdd?.kind === 'product') {
+    recommendedSet = new Set([slotOptions[0]])
+  }
+
+  if (view === 'slot' && pendingAdd) {
+    const pendingName =
+      pendingAdd.kind === 'meal'
+        ? pendingAdd.meal.name
+        : pendingAdd.product.name
+
+    return (
+      <section className="page">
+        <header className="product-form__header">
+          <button
+            type="button"
+            className="product-form__close"
+            onClick={() => {
+              setPendingAdd(null)
+              setView('add')
+            }}
+            aria-label="חזרה"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+          <h1>בחירת חריץ</h1>
+          <span className="today-add__header-spacer" aria-hidden="true" />
+        </header>
+
+        <p className="slot-picker__hint">
+          לאן להוסיף את <strong>{pendingName}</strong>?
+        </p>
+
+        <ul className="slot-picker-list">
+          {slotOptions.map((slot) => {
+            const isRecommended = recommendedSet.has(slot)
+            return (
+              <li key={slot}>
+                <button
+                  type="button"
+                  className={
+                    isRecommended
+                      ? 'slot-picker-option slot-picker-option--recommended'
+                      : 'slot-picker-option'
+                  }
+                  onClick={() => handleSelectSlot(slot)}
+                >
+                  <span className="slot-picker-option__label">
+                    {SLOT_LABELS[slot] || slot}
+                  </span>
+                  {isRecommended ? (
+                    <span className="slot-picker-option__badge">מומלץ</span>
+                  ) : null}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </section>
+    )
+  }
+
   if (view === 'add') {
     return (
       <section className="page">
@@ -319,7 +785,7 @@ function TodayPage() {
               <path d="M6 6l12 12M18 6L6 18" />
             </svg>
           </button>
-          <h1>הוספה להיום</h1>
+          <h1>{isSelectedToday ? 'הוספה להיום' : 'הוספה ליום'}</h1>
           <span className="today-add__header-spacer" aria-hidden="true" />
         </header>
 
@@ -417,20 +883,23 @@ function TodayPage() {
               <ul className="today-pick-list">
                 {visibleMeals.map((meal) => {
                   const nutrition = calculateMealNutrition(meal, products)
+                  const tags = mealTags(meal)
 
                   return (
                     <li key={meal.id} className="today-pick-card">
                       <div className="today-pick-card__info">
                         <span className="today-pick-card__name">{meal.name}</span>
-                        <span className="today-pick-card__tag">
-                          {TAG_LABELS[meal.tag] || meal.tag}
-                        </span>
+                        {tags.length > 0 ? (
+                          <span className="today-pick-card__tag">
+                            {formatTagList(tags)}
+                          </span>
+                        ) : null}
                         <NutritionSummary nutrition={nutrition} />
                       </div>
                       <button
                         type="button"
                         className="today-pick-card__add"
-                        onClick={() => handleAddMeal(meal)}
+                        onClick={() => handlePickMeal(meal)}
                         aria-label={`הוספת ${meal.name}`}
                       >
                         +
@@ -483,7 +952,10 @@ function TodayPage() {
                   const errorId = `${quantityId}-error`
 
                   return (
-                    <li key={product.id} className="today-pick-card today-pick-card--product">
+                    <li
+                      key={product.id}
+                      className="today-pick-card today-pick-card--product"
+                    >
                       <div className="today-pick-card__info">
                         <span className="today-pick-card__name">
                           {product.name}
@@ -527,7 +999,7 @@ function TodayPage() {
                       <button
                         type="button"
                         className="today-pick-card__add"
-                        onClick={() => handleAddProduct(product)}
+                        onClick={() => handlePickProduct(product)}
                         aria-label={`הוספת ${product.name}`}
                       >
                         +
@@ -545,9 +1017,98 @@ function TodayPage() {
 
   return (
     <section className="page">
-      <header className="page-header">
-        <h1>היום</h1>
+      <header className="page-header page-header--today">
+        <h1>{isSelectedToday ? 'היום' : 'תפריט יומי'}</h1>
+        {!isSelectedToday ? (
+          <button
+            type="button"
+            className="week-selector__today-btn"
+            onClick={goToToday}
+          >
+            היום
+          </button>
+        ) : null}
       </header>
+
+      <section className="week-selector" aria-label="בחירת תאריך">
+        <div className="week-selector__toolbar">
+          <button
+            type="button"
+            className="week-selector__nav"
+            onClick={() => shiftWeek(-1)}
+            aria-label="שבוע קודם"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            className="week-selector__calendar-btn"
+            onClick={() => {
+              const input = dateInputRef.current
+              if (!input) {
+                return
+              }
+              if (typeof input.showPicker === 'function') {
+                input.showPicker()
+              } else {
+                input.click()
+              }
+            }}
+            aria-label="בחירת תאריך מלוח שנה"
+          >
+            תאריך
+          </button>
+          <input
+            ref={dateInputRef}
+            type="date"
+            className="week-selector__date-input"
+            value={selectedDateKey}
+            onChange={(event) => {
+              if (event.target.value) {
+                selectDate(event.target.value)
+              }
+            }}
+            aria-label="תאריך"
+          />
+          <button
+            type="button"
+            className="week-selector__nav"
+            onClick={() => shiftWeek(1)}
+            aria-label="שבוע הבא"
+          >
+            ›
+          </button>
+        </div>
+
+        <div className="week-selector__grid" role="listbox" aria-label="ימי השבוע">
+          {weekDayKeys.map((dateKey) => {
+            const date = parseDateKey(dateKey)
+            const weekday = HEBREW_WEEKDAYS[date.getDay()]
+            const isSelected = dateKey === selectedDateKey
+            const isToday = dateKey === todayKey
+
+            return (
+              <button
+                key={dateKey}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                className={[
+                  'week-selector__day',
+                  isSelected ? 'week-selector__day--selected' : '',
+                  isToday ? 'week-selector__day--today' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                onClick={() => selectDate(dateKey)}
+              >
+                <span className="week-selector__weekday">{weekday}</span>
+                <span className="week-selector__date num">{date.getDate()}</span>
+              </button>
+            )
+          })}
+        </div>
+      </section>
 
       <div className="nutrition-grid">
         {NUTRITION_CARDS.map((card) => (
@@ -567,8 +1128,13 @@ function TodayPage() {
         ))}
       </div>
 
-      <section className="remaining-card" aria-label="נשאר להיום">
-        <h2 className="remaining-card__title">נשאר להיום</h2>
+      <section
+        className="remaining-card"
+        aria-label={isSelectedToday ? 'נשאר להיום' : 'נשאר ליום הנבחר'}
+      >
+        <h2 className="remaining-card__title">
+          {isSelectedToday ? 'נשאר להיום' : 'נשאר ליום'}
+        </h2>
         <div className="remaining-card__grid">
           {NUTRITION_CARDS.map((card) => (
             <div key={card.key} className="remaining-card__item">
@@ -583,146 +1149,70 @@ function TodayPage() {
         </div>
       </section>
 
-      <section className="today-meals" aria-label="הארוחות שלי להיום">
+      <section className="today-meals" aria-label="חריצי הארוחות">
         <div className="today-meals__header">
-          <h2 className="today-meals__title">הארוחות שלי להיום</h2>
-          <button type="button" className="today-meals__add" onClick={openAdd}>
+          <h2 className="today-meals__title">הארוחות שלי</h2>
+          <button type="button" className="today-meals__add" onClick={() => openAdd()}>
             <span aria-hidden="true">+</span>
             הוספה
           </button>
         </div>
 
-        {plannerItems.length === 0 ? (
-          <div className="empty-state">
-            <p>עדיין לא הוספת ארוחות להיום</p>
-          </div>
-        ) : (
-          <ul className="today-item-list">
-            {plannerItems.map((item, itemIndex) => {
-              const displayItem = displayPlanner[itemIndex] || item
-              const nutrition = calculatePlannerNutrition(
-                [displayItem],
-                products,
-              )
+        {SLOT_SECTIONS.map((section) => {
+          const items =
+            section.kind === 'primary'
+              ? dayPlan[section.id]
+                ? [dayPlan[section.id]]
+                : []
+              : Array.isArray(dayPlan.snacks)
+                ? dayPlan.snacks
+                : []
 
-              return (
-                <li key={item.id} className="today-item-card">
-                  <div className="today-item-card__top">
-                    <div className="today-item-card__info">
-                      {item.type === 'meal' && item.tag ? (
-                        <span className="today-item-card__tag">
-                          {TAG_LABELS[item.tag] || item.tag}
-                        </span>
-                      ) : item.type === 'product' ? (
-                        <span className="today-item-card__tag">מוצר</span>
-                      ) : null}
-                      <span className="today-item-card__name">{item.name}</span>
-                      <NutritionSummary nutrition={nutrition} />
-                    </div>
-                    <button
-                      type="button"
-                      className="today-item-card__delete"
-                      onClick={() => handleRemoveItem(item.id)}
-                    >
-                      מחיקה
-                    </button>
-                  </div>
+          return (
+            <section
+              key={section.id}
+              className="slot-section"
+              aria-label={section.title}
+            >
+              <div className="slot-section__header">
+                <h3 className="slot-section__title">{section.title}</h3>
+                <button
+                  type="button"
+                  className="slot-section__add"
+                  onClick={() =>
+                    openAdd(section.kind === 'primary' ? section.id : 'snack')
+                  }
+                  aria-label={`הוספה ל${section.title}`}
+                >
+                  +
+                </button>
+              </div>
 
-                  <ul className="today-ingredient-list">
-                    {item.ingredients.map((ingredient, ingredientIndex) => {
-                      const key = draftKey(item.id, ingredientIndex)
-                      const draftValue = getQuantityDraft(item, ingredientIndex)
-                      const error = itemErrors[key]
-                      const inputId = `today-qty-${item.id}-${ingredientIndex}`
-                      const errorId = `${inputId}-error`
-                      const ingredientNutrition = calculateProductNutrition(
-                        productsById.get(ingredient.productId) || {
-                          caloriesPer100g: ingredient.caloriesPer100g,
-                          proteinPer100g: ingredient.proteinPer100g,
-                          carbsPer100g: ingredient.carbsPer100g,
-                          fatPer100g: ingredient.fatPer100g,
-                        },
-                        getEffectiveQuantity(item, ingredientIndex),
-                      )
-
-                      return (
-                        <li key={key} className="today-ingredient-row">
-                          <div className="today-ingredient-row__main">
-                            <span className="today-ingredient-row__name">
-                              {ingredientLabel(ingredient, productsById)}
-                            </span>
-                            <div className="today-ingredient-row__qty">
-                              <label
-                                className="visually-hidden"
-                                htmlFor={inputId}
-                              >
-                                כמות בגרם
-                              </label>
-                              <input
-                                id={inputId}
-                                type="number"
-                                inputMode="decimal"
-                                min="0"
-                                step="any"
-                                className="input-ltr today-ingredient-row__qty-input"
-                                value={draftValue}
-                                onChange={(event) =>
-                                  handleQuantityDraftChange(
-                                    item.id,
-                                    ingredientIndex,
-                                    event.target.value,
-                                  )
-                                }
-                                onBlur={(event) =>
-                                  commitQuantity(
-                                    item.id,
-                                    ingredientIndex,
-                                    event.target.value,
-                                  )
-                                }
-                                onKeyDown={(event) => {
-                                  if (event.key === 'Enter') {
-                                    event.preventDefault()
-                                    // Commit here — blur() inside keydown does not
-                                    // reliably fire React onBlur in the same turn.
-                                    commitQuantity(
-                                      item.id,
-                                      ingredientIndex,
-                                      event.currentTarget.value,
-                                    )
-                                    event.currentTarget.blur()
-                                  }
-                                }}
-                                aria-invalid={Boolean(error)}
-                                aria-describedby={
-                                  error ? errorId : undefined
-                                }
-                              />
-                              <span className="today-ingredient-row__unit">
-                                גרם
-                              </span>
-                            </div>
-                            <span className="today-ingredient-row__kcal">
-                              <Num>
-                                {formatMacro(ingredientNutrition.calories)}
-                              </Num>
-                              {' קל׳'}
-                            </span>
-                          </div>
-                          {error ? (
-                            <p id={errorId} className="product-field__error">
-                              {error}
-                            </p>
-                          ) : null}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </li>
-              )
-            })}
-          </ul>
-        )}
+              {items.length === 0 ? (
+                <div className="slot-section__empty">
+                  <p>ריק</p>
+                </div>
+              ) : (
+                <ul className="today-item-list">
+                  {items.map((item) => (
+                    <PlannerItemCard
+                      key={item.id}
+                      item={item}
+                      displayItem={displayById.get(item.id) || item}
+                      products={products}
+                      productsById={productsById}
+                      quantityDrafts={quantityDrafts}
+                      itemErrors={itemErrors}
+                      onQuantityDraftChange={handleQuantityDraftChange}
+                      onCommitQuantity={commitQuantity}
+                      onRemove={handleRemoveItem}
+                    />
+                  ))}
+                </ul>
+              )}
+            </section>
+          )
+        })}
       </section>
     </section>
   )
