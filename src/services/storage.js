@@ -54,11 +54,16 @@ export const SLOT_IDS = ['breakfast', 'lunch', 'dinner', 'snack']
 
 const PRIMARY_SLOTS = ['breakfast', 'lunch', 'dinner']
 
+const DEFAULT_ALLOWED_CALORIE_OVERAGE = 100
+const MIN_ALLOWED_CALORIE_OVERAGE = 0
+const MAX_ALLOWED_CALORIE_OVERAGE = 500
+
 const DEFAULT_GOALS = {
   calories: 1500,
   protein: 110,
   carbs: 150,
   fat: 50,
+  allowedCalorieOverage: DEFAULT_ALLOWED_CALORIE_OVERAGE,
 }
 
 const MIGRATION_MEALS_TAGS = 'meals_tags_v1'
@@ -1100,11 +1105,53 @@ export function deleteMeal(id) {
 
 const LIBRARY_VERSION = 1
 
+/** Validated bundled starter products (for import refs / re-seed). */
+function getBundledStarterProducts() {
+  const catalog = []
+  for (const rawStarter of STARTER_PRODUCTS) {
+    if (!rawStarter || typeof rawStarter !== 'object') {
+      continue
+    }
+    const id =
+      typeof rawStarter.id === 'string' ? rawStarter.id.trim() : ''
+    if (!id) {
+      continue
+    }
+    const result = validateProduct(rawStarter)
+    if (!result.ok) {
+      continue
+    }
+    catalog.push({
+      id,
+      ...result.product,
+    })
+  }
+  return catalog
+}
+
+function mergeProductCatalogs(...lists) {
+  const merged = new Map()
+  for (const list of lists) {
+    if (!Array.isArray(list)) {
+      continue
+    }
+    for (const product of list) {
+      if (product && typeof product.id === 'string' && product.id !== '') {
+        merged.set(product.id, product)
+      }
+    }
+  }
+  return [...merged.values()]
+}
+
 /** Snapshot of products + saved meals only (no plans, no goals). */
 export function exportLibrary() {
   return {
     version: LIBRARY_VERSION,
-    products: getProducts(),
+    // Bundled starters are re-seeded on load — omit them from backups.
+    products: getProducts().filter(
+      (product) => !STARTER_PRODUCT_IDS.has(product.id),
+    ),
     meals: getMeals(),
   }
 }
@@ -1197,18 +1244,20 @@ export function validateLibraryImport(data, mode) {
     })
   }
 
+  // Starters may be omitted from export files; still allow meal refs to them.
+  const starterCatalog = getBundledStarterProducts()
   let productListForMeals
   if (importMode === 'replace') {
-    productListForMeals = importedProducts
+    productListForMeals = mergeProductCatalogs(
+      starterCatalog,
+      importedProducts,
+    )
   } else {
-    const merged = new Map()
-    for (const product of getProducts()) {
-      merged.set(product.id, product)
-    }
-    for (const product of importedProducts) {
-      merged.set(product.id, product)
-    }
-    productListForMeals = [...merged.values()]
+    productListForMeals = mergeProductCatalogs(
+      starterCatalog,
+      getProducts(),
+      importedProducts,
+    )
   }
 
   const importedMeals = []
@@ -1321,9 +1370,11 @@ export function importLibrary(data, mode) {
   if (importMode === 'replace') {
     saveProducts(validated.products)
     saveMeals(validated.meals)
+    // Re-seed bundled starters omitted from the export file.
+    const products = ensureStarterProducts()
     return {
       ok: true,
-      products: validated.products,
+      products,
       meals: validated.meals,
     }
   }
@@ -1374,6 +1425,27 @@ export function validateGoals(input) {
     goals[field] = value
   }
 
+  const overageMissing =
+    source.allowedCalorieOverage === undefined ||
+    source.allowedCalorieOverage === null
+
+  if (overageMissing) {
+    goals.allowedCalorieOverage = DEFAULT_ALLOWED_CALORIE_OVERAGE
+  } else {
+    const overage = parseNumber(source.allowedCalorieOverage)
+    if (!Number.isFinite(overage)) {
+      errors.allowedCalorieOverage = 'יש להזין מספר תקין'
+    } else if (!Number.isInteger(overage)) {
+      errors.allowedCalorieOverage = 'יש להזין מספר שלם'
+    } else if (overage < MIN_ALLOWED_CALORIE_OVERAGE) {
+      errors.allowedCalorieOverage = 'הערך לא יכול להיות שלילי'
+    } else if (overage > MAX_ALLOWED_CALORIE_OVERAGE) {
+      errors.allowedCalorieOverage = `הערך המרבי הוא ${MAX_ALLOWED_CALORIE_OVERAGE}`
+    } else {
+      goals.allowedCalorieOverage = overage
+    }
+  }
+
   if (Object.keys(errors).length > 0) {
     return { ok: false, errors, goals: null }
   }
@@ -1386,6 +1458,7 @@ export function validateGoals(input) {
       protein: goals.protein,
       carbs: goals.carbs,
       fat: goals.fat,
+      allowedCalorieOverage: goals.allowedCalorieOverage,
     },
   }
 }
@@ -2442,6 +2515,49 @@ export function removePlannerItem(dateKey, itemId) {
 
   saveDayPlan(key, plan)
   return true
+}
+
+/**
+ * Replace one planned meal instance with a snapshot of a saved meal.
+ * Keeps the same planner item id and slot position.
+ * Does not modify the saved meal library or other planner occurrences.
+ */
+export function replacePlannerMealItem(dateKey, itemId, meal, products, meals) {
+  ensureMigrations()
+
+  if (typeof itemId !== 'string' || itemId.trim() === '') {
+    return { ok: false, errors: { id: 'הפריט לא נמצא' }, item: null }
+  }
+
+  const key = ensureDayExists(dateKey)
+  const plan = getDayPlan(key)
+  const location = findPlannerItemLocation(plan, itemId)
+  if (!location) {
+    return { ok: false, errors: { id: 'הפריט לא נמצא' }, item: null }
+  }
+
+  const existing = getItemAtLocation(plan, location)
+  if (!existing || existing.type !== 'meal') {
+    return {
+      ok: false,
+      errors: { type: 'ניתן להחליף רק ארוחה מתוכננת' },
+      item: null,
+    }
+  }
+
+  const snapshot = createMealSnapshot(meal, products, meals)
+  if (!snapshot.ok) {
+    return snapshot
+  }
+
+  const nextItem = {
+    ...snapshot.item,
+    id: existing.id,
+  }
+
+  setItemAtLocation(plan, location, nextItem)
+  saveDayPlan(key, plan)
+  return { ok: true, errors: {}, item: nextItem }
 }
 
 export function updatePlannerItemQuantity(

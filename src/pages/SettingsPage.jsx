@@ -15,12 +15,15 @@ const GOAL_FIELDS = [
   { name: 'fat', label: 'שומן', id: 'goal-fat' },
 ]
 
+const OVERAGE_PRESETS = [0, 50, 100, 150, 200]
+
 function goalsToForm(goals) {
   return {
     calories: String(goals.calories),
     protein: String(goals.protein),
     carbs: String(goals.carbs),
     fat: String(goals.fat),
+    allowedCalorieOverage: String(goals.allowedCalorieOverage ?? 100),
   }
 }
 
@@ -173,22 +176,81 @@ function SettingsPage() {
         </h2>
 
         {GOAL_FIELDS.map((field) => (
-          <div className="product-field" key={field.name}>
-            <label htmlFor={field.id}>{field.label}</label>
-            <input
-              id={field.id}
-              name={field.name}
-              type="number"
-              inputMode="decimal"
-              min="0"
-              step="any"
-              className="input-ltr"
-              value={form[field.name]}
-              onChange={handleChange}
-              aria-invalid={errors[field.name] ? 'true' : 'false'}
-            />
-            {errors[field.name] ? (
-              <span className="product-field__error">{errors[field.name]}</span>
+          <div key={field.name}>
+            <div className="product-field">
+              <label htmlFor={field.id}>{field.label}</label>
+              <input
+                id={field.id}
+                name={field.name}
+                type="number"
+                inputMode="decimal"
+                min="0"
+                step="any"
+                className="input-ltr"
+                value={form[field.name]}
+                onChange={handleChange}
+                aria-invalid={errors[field.name] ? 'true' : 'false'}
+              />
+              {errors[field.name] ? (
+                <span className="product-field__error">{errors[field.name]}</span>
+              ) : null}
+            </div>
+
+            {field.name === 'calories' ? (
+              <div className="product-field goals-overage-field">
+                <label htmlFor="goal-calorie-overage">טווח חריגה מותר</label>
+                <p className="product-field__hint" id="goal-calorie-overage-hint">
+                  כמה קלוריות אפשר לעבור מעל היעד היומי לפני שהיום יסומן כחריגה.
+                </p>
+                <div
+                  className="meal-filter-chips goals-overage-presets"
+                  role="group"
+                  aria-label="בחירה מהירה לטווח חריגה"
+                >
+                  {OVERAGE_PRESETS.map((preset) => {
+                    const selected =
+                      String(form.allowedCalorieOverage) === String(preset)
+                    return (
+                      <button
+                        key={preset}
+                        type="button"
+                        className={
+                          selected ? 'meal-chip meal-chip--active' : 'meal-chip'
+                        }
+                        aria-pressed={selected ? 'true' : 'false'}
+                        onClick={() => {
+                          setForm((current) => ({
+                            ...current,
+                            allowedCalorieOverage: String(preset),
+                          }))
+                          setSaved(false)
+                        }}
+                      >
+                        <span className="num">{preset}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <input
+                  id="goal-calorie-overage"
+                  name="allowedCalorieOverage"
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  max="500"
+                  step="1"
+                  className="input-ltr"
+                  value={form.allowedCalorieOverage}
+                  onChange={handleChange}
+                  aria-describedby="goal-calorie-overage-hint"
+                  aria-invalid={errors.allowedCalorieOverage ? 'true' : 'false'}
+                />
+                {errors.allowedCalorieOverage ? (
+                  <span className="product-field__error">
+                    {errors.allowedCalorieOverage}
+                  </span>
+                ) : null}
+              </div>
             ) : null}
           </div>
         ))}

@@ -52,7 +52,8 @@ export function sumNutrition(items) {
   return totals
 }
 
-function scaleNutrition(nutrition, multiplier) {
+/** Scale a nutrition totals object by a positive multiplier (e.g. meal quantity). */
+export function scaleNutrition(nutrition, multiplier) {
   const factor = toSafeNumber(multiplier)
   const source = nutrition && typeof nutrition === 'object' ? nutrition : {}
   return {
@@ -183,6 +184,61 @@ export function remainingNutrition(current, goals) {
     protein: toSafeNumber(goalsSafe.protein) - toSafeNumber(currentSafe.protein),
     carbs: toSafeNumber(goalsSafe.carbs) - toSafeNumber(currentSafe.carbs),
     fat: toSafeNumber(goalsSafe.fat) - toSafeNumber(currentSafe.fat),
+  }
+}
+
+export const CALORIE_STATUS_NORMAL = 'normal'
+export const CALORIE_STATUS_WITHIN_TOLERANCE = 'within_tolerance'
+export const CALORIE_STATUS_OVER = 'over'
+
+/**
+ * Shared calorie overage status for planner UI and Smart Balance.
+ *
+ * effectiveCalorieLimit = dailyCalorieTarget + allowedCalorieOverage
+ *
+ * - current <= target → normal
+ * - target < current <= effectiveCalorieLimit → within_tolerance (no warning / no Smart Balance)
+ * - current > effectiveCalorieLimit → over (warning + Smart Balance; actualExcess uses effective limit)
+ *
+ * When allowedCalorieOverage is omitted/invalid, treats overage as 0 (strict target).
+ */
+export function getCalorieStatus(
+  currentCalories,
+  dailyCalorieTarget,
+  allowedCalorieOverage,
+) {
+  const current = toSafeNumber(currentCalories)
+  const target = toSafeNumber(dailyCalorieTarget)
+  const hasOverage =
+    allowedCalorieOverage !== undefined &&
+    allowedCalorieOverage !== null &&
+    allowedCalorieOverage !== ''
+  const overageRaw = hasOverage ? toSafeNumber(allowedCalorieOverage) : 0
+  const overage = overageRaw > 0 ? Math.floor(overageRaw) : 0
+  const effectiveCalorieLimit = target + overage
+  const overTargetBy = current - target
+  const actualExcess = current - effectiveCalorieLimit
+
+  let status = CALORIE_STATUS_NORMAL
+  if (current > effectiveCalorieLimit) {
+    status = CALORIE_STATUS_OVER
+  } else if (current > target) {
+    status = CALORIE_STATUS_WITHIN_TOLERANCE
+  }
+
+  return {
+    currentCalories: current,
+    dailyCalorieTarget: target,
+    allowedCalorieOverage: overage,
+    effectiveCalorieLimit,
+    status,
+    isWithinTarget: status === CALORIE_STATUS_NORMAL,
+    isWithinTolerance: status === CALORIE_STATUS_WITHIN_TOLERANCE,
+    isOverLimit: status === CALORIE_STATUS_OVER,
+    overTargetBy: Math.max(0, overTargetBy),
+    actualExcess: Math.max(0, actualExcess),
+    showWarning: status === CALORIE_STATUS_OVER,
+    showSmartBalance: status === CALORIE_STATUS_OVER,
   }
 }
 

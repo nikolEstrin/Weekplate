@@ -1,4 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
+import BalanceDaySheet from '../components/BalanceDaySheet.jsx'
+import MealSwapSheet from '../components/MealSwapSheet.jsx'
 import {
   addMealToDayPlan,
   addProductToDayPlan,
@@ -15,6 +17,7 @@ import {
   isDayPlanEmpty,
   quantityToGrams,
   removePlannerItem,
+  replacePlannerMealItem,
   SLOT_IDS,
   summarizeDayPlan,
   tagToRecommendedSlot,
@@ -22,9 +25,16 @@ import {
   updatePlannerMealMultiplier,
 } from '../services/storage.js'
 import {
+  BALANCE_ACTION_REDUCE_QUANTITY,
+  BALANCE_ACTION_REPLACE_MEAL,
+  canReplaceWholeMeal,
+  recommendBalanceDaySwaps,
+} from '../services/smartMealSwap.js'
+import {
   calculateMealNutrition,
   calculatePlannerNutrition,
   calculateProductNutrition,
+  getCalorieStatus,
   remainingNutrition,
   roundForDisplay,
 } from '../utils/nutrition.js'
@@ -313,6 +323,7 @@ function PlannerItemCard({
   onCommitMultiplier,
   onStepMultiplier,
   onRemove,
+  onSwap,
 }) {
   const nutrition = calculatePlannerNutrition([displayItem], products)
   const isMeal = item.type === 'meal'
@@ -436,14 +447,25 @@ function PlannerItemCard({
       ) : null}
 
       {isMeal ? (
-        <button
-          type="button"
-          className="today-item-card__expand"
-          onClick={() => onToggleIngredients(item.id)}
-          aria-expanded={ingredientsExpanded}
-        >
-          שינוי מרכיבים
-        </button>
+        <div className="today-item-card__actions">
+          <button
+            type="button"
+            className="today-item-card__expand"
+            onClick={() => onToggleIngredients(item.id)}
+            aria-expanded={ingredientsExpanded}
+          >
+            ✎ עריכה
+          </button>
+          {canReplaceWholeMeal(item) ? (
+            <button
+              type="button"
+              className="today-item-card__swap"
+              onClick={() => onSwap(item)}
+            >
+              🔄 החלפה
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {ingredientsExpanded ? (
@@ -566,6 +588,8 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
   const [copyDestKey, setCopyDestKey] = useState('')
   const [copyError, setCopyError] = useState('')
   const [copyReplaceSummary, setCopyReplaceSummary] = useState([])
+  const [swapItemId, setSwapItemId] = useState(null)
+  const [balanceSheetOpen, setBalanceSheetOpen] = useState(false)
 
   const dateInputRef = useRef(null)
   const copyDateInputRef = useRef(null)
@@ -1126,14 +1150,219 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
     refreshPlan()
   }
 
+  function handleOpenSwap(item) {
+    if (!item || !canReplaceWholeMeal(item)) {
+      return
+    }
+    setBalanceSheetOpen(false)
+    setSwapItemId(item.id)
+  }
+
+  function handleCloseSwap() {
+    setSwapItemId(null)
+  }
+
+  function handleConfirmSwap(alternative) {
+    if (!swapItem || !alternative) {
+      return { ok: false }
+    }
+
+    // Accept recommendation object { meal, quantity } or a bare meal.
+    const replacementMeal =
+      alternative.meal && typeof alternative.meal === 'object'
+        ? alternative.meal
+        : alternative
+    if (!replacementMeal || typeof replacementMeal !== 'object') {
+      return { ok: false }
+    }
+
+    const result = replacePlannerMealItem(
+      selectedDateKey,
+      swapItem.id,
+      replacementMeal,
+      products,
+      meals,
+    )
+    if (!result.ok) {
+      return result
+    }
+
+    // Preserve the chosen instance quantity (createMealSnapshot defaults to 1).
+    const replacementQuantity = Number(alternative.quantity)
+    if (
+      Number.isFinite(replacementQuantity) &&
+      replacementQuantity > 0 &&
+      replacementQuantity !== 1
+    ) {
+      const multiplierResult = updatePlannerMealMultiplier(
+        selectedDateKey,
+        swapItem.id,
+        replacementQuantity,
+      )
+      if (!multiplierResult.ok) {
+        return multiplierResult
+      }
+    }
+
+    setMultiplierDrafts((current) => {
+      if (!Object.prototype.hasOwnProperty.call(current, swapItem.id)) {
+        return current
+      }
+      const next = { ...current }
+      delete next[swapItem.id]
+      return next
+    })
+    refreshPlan()
+    return { ok: true }
+  }
+
+  function handleOpenBalanceSheet() {
+    setSwapItemId(null)
+    setBalanceSheetOpen(true)
+  }
+
+  function handleCloseBalanceSheet() {
+    setBalanceSheetOpen(false)
+  }
+
+  function handleConfirmBalanceAction(entry) {
+    if (!entry || !entry.plannerItemId) {
+      return { ok: false }
+    }
+
+    if (entry.actionType === BALANCE_ACTION_REDUCE_QUANTITY) {
+      const result = updatePlannerMealMultiplier(
+        selectedDateKey,
+        entry.plannerItemId,
+        entry.suggestedQuantity,
+      )
+      if (result.ok) {
+        setMultiplierDrafts((current) => {
+          if (!Object.prototype.hasOwnProperty.call(current, entry.plannerItemId)) {
+            return current
+          }
+          const next = { ...current }
+          delete next[entry.plannerItemId]
+          return next
+        })
+        setMultiplierErrors((current) => {
+          if (!current[entry.plannerItemId]) {
+            return current
+          }
+          const next = { ...current }
+          delete next[entry.plannerItemId]
+          return next
+        })
+        refreshPlan()
+      }
+      return result
+    }
+
+    if (entry.actionType === BALANCE_ACTION_REPLACE_MEAL) {
+      const replacementMeal = entry.replacement?.meal
+      if (!replacementMeal) {
+        return { ok: false }
+      }
+
+      const replaceResult = replacePlannerMealItem(
+        selectedDateKey,
+        entry.plannerItemId,
+        replacementMeal,
+        products,
+        meals,
+      )
+      if (!replaceResult.ok) {
+        return replaceResult
+      }
+
+      const replacementQuantity = Number(entry.replacementQuantity)
+      if (Number.isFinite(replacementQuantity) && replacementQuantity > 0 && replacementQuantity !== 1) {
+        const multiplierResult = updatePlannerMealMultiplier(
+          selectedDateKey,
+          entry.plannerItemId,
+          replacementQuantity,
+        )
+        if (!multiplierResult.ok) {
+          return multiplierResult
+        }
+      }
+
+      setMultiplierDrafts((current) => {
+        if (!Object.prototype.hasOwnProperty.call(current, entry.plannerItemId)) {
+          return current
+        }
+        const next = { ...current }
+        delete next[entry.plannerItemId]
+        return next
+      })
+      refreshPlan()
+      return { ok: true }
+    }
+
+    return { ok: false }
+  }
+
   const displayPlanner = plannerWithDrafts(plannerItems)
   const displayById = new Map(
     displayPlanner.map((item) => [item.id, item]),
   )
   const current = calculatePlannerNutrition(displayPlanner, products)
   const remaining = remainingNutrition(current, goals)
-  const caloriesOverTarget = current.calories > goals.calories
-  const caloriesOverBy = current.calories - goals.calories
+  const calorieStatus = getCalorieStatus(
+    current.calories,
+    goals.calories,
+    goals.allowedCalorieOverage,
+  )
+  const caloriesOverLimit = calorieStatus.isOverLimit
+  const caloriesWithinTolerance = calorieStatus.isWithinTolerance
+  const caloriesOverBy = calorieStatus.actualExcess
+  const swapItem =
+    typeof swapItemId === 'string'
+      ? plannerItems.find(
+          (entry) => entry.id === swapItemId && canReplaceWholeMeal(entry),
+        ) || null
+      : null
+
+  const replaceableMeals = []
+  for (const section of SLOT_SECTIONS) {
+    const items =
+      section.kind === 'primary'
+        ? Array.isArray(dayPlan[section.id])
+          ? dayPlan[section.id]
+          : []
+        : Array.isArray(dayPlan.snacks)
+          ? dayPlan.snacks
+          : []
+    const slotId = section.kind === 'primary' ? section.id : 'snack'
+    for (const item of items) {
+      if (!item || item.type !== 'meal') {
+        continue
+      }
+      replaceableMeals.push({
+        item: displayById.get(item.id) || item,
+        slotId,
+        slotLabel: section.title,
+      })
+    }
+  }
+
+  const balanceSuggestions = caloriesOverLimit
+    ? recommendBalanceDaySwaps({
+        replaceableMeals,
+        allAvailableMeals: meals,
+        currentDayNutrition: current,
+        dailyTargets: goals,
+        products,
+        meals,
+        limit: 3,
+      })
+    : {
+        recommendations: [],
+        calorieExcess: 0,
+        dayCalories: current.calories,
+        targetCalories: goals.calories,
+        effectiveCalorieLimit: calorieStatus.effectiveCalorieLimit,
+      }
 
   const normalizedMealQuery = mealQuery.trim().toLowerCase()
   const visibleMeals = meals.filter((meal) => {
@@ -1778,7 +2007,7 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
       >
         {NUTRITION_CARDS.map((card) => {
           const isCaloriesOver =
-            card.key === 'calories' && caloriesOverTarget
+            card.key === 'calories' && caloriesOverLimit
 
           return (
             <article
@@ -1791,7 +2020,11 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
                 .filter(Boolean)
                 .join(' ')}
               aria-describedby={
-                isCaloriesOver ? 'calories-over-warning' : undefined
+                isCaloriesOver
+                  ? 'calories-over-warning'
+                  : caloriesWithinTolerance && card.key === 'calories'
+                    ? 'calories-tolerance-note'
+                    : undefined
               }
             >
               <h2 className="nutrition-card__label">{card.label}</h2>
@@ -1805,7 +2038,7 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
             </article>
           )
         })}
-        {caloriesOverTarget ? (
+        {caloriesOverLimit ? (
           <p
             id="calories-over-warning"
             className="nutrition-over-banner"
@@ -1816,7 +2049,43 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
             {' קל׳'}
           </p>
         ) : null}
+        {caloriesWithinTolerance ? (
+          <p
+            id="calories-tolerance-note"
+            className="nutrition-tolerance-banner"
+            role="status"
+          >
+            עדיין בטווח שהגדרת 🌿
+            <span className="nutrition-tolerance-banner__detail">
+              {' · +'}
+              <Num>{formatDisplay(calorieStatus.overTargetBy)}</Num>
+              {' מתוך '}
+              <Num>{formatDisplay(calorieStatus.allowedCalorieOverage)}</Num>
+              {' קל׳ חריגה מותרת'}
+            </span>
+          </p>
+        ) : null}
       </div>
+
+      {caloriesOverLimit ? (
+        <section className="balance-suggestion" aria-label="איזון קלוריות">
+          <p className="balance-suggestion__headline">
+            <span aria-hidden="true">⚠️ </span>
+            <Num>{formatDisplay(caloriesOverBy)}</Num>
+            {' קלוריות מעל היעד'}
+          </p>
+          <p className="balance-suggestion__text">
+            אפשר להתקרב ליעד בעזרת החלפה חכמה של אחת הארוחות.
+          </p>
+          <button
+            type="button"
+            className="btn-primary balance-suggestion__action"
+            onClick={handleOpenBalanceSheet}
+          >
+            ✨ הציעי לי איך לאזן
+          </button>
+        </section>
+      ) : null}
 
       <section
         className="remaining-card"
@@ -1908,6 +2177,7 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
                       onCommitMultiplier={commitMultiplier}
                       onStepMultiplier={stepMultiplier}
                       onRemove={handleRemoveItem}
+                      onSwap={handleOpenSwap}
                     />
                   ))}
                 </ul>
@@ -1941,6 +2211,30 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
             <div className="today-sheet__body">{addSheetBody}</div>
           </div>
         </div>
+      ) : null}
+
+      {balanceSheetOpen && caloriesOverLimit ? (
+        <BalanceDaySheet
+          calorieExcess={balanceSuggestions.calorieExcess || caloriesOverBy}
+          targetCalories={goals.calories}
+          recommendations={balanceSuggestions.recommendations}
+          onConfirmAction={handleConfirmBalanceAction}
+          onClose={handleCloseBalanceSheet}
+        />
+      ) : null}
+
+      {swapItem ? (
+        <MealSwapSheet
+          item={swapItem}
+          displayItem={displayById.get(swapItem.id) || swapItem}
+          products={products}
+          productsById={productsById}
+          meals={meals}
+          dayNutrition={current}
+          goals={goals}
+          onConfirm={handleConfirmSwap}
+          onClose={handleCloseSwap}
+        />
       ) : null}
     </section>
   )
