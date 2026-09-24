@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import {
   addMeal,
+  defaultQuantityForUnit,
   deleteMeal,
   getMeals,
   getProducts,
@@ -9,6 +10,9 @@ import {
   quantityToGrams,
   updateMeal,
 } from '../services/storage.js'
+import {
+  isMealIngredient,
+} from '../utils/mealTree.js'
 import {
   calculateMealNutrition,
   roundForDisplay,
@@ -27,8 +31,11 @@ const TAG_LABELS = Object.fromEntries(
 )
 
 const EMPTY_INGREDIENT = {
+  kind: 'product',
   productId: '',
+  mealId: '',
   quantity: '',
+  multiplier: '1',
   unitId: GRAMS_UNIT.id,
 }
 
@@ -37,6 +44,9 @@ const EMPTY_FORM = {
   tags: ['breakfast'],
   ingredients: [{ ...EMPTY_INGREDIENT }],
 }
+
+const PICKER_PREFIX_PRODUCT = 'product:'
+const PICKER_PREFIX_MEAL = 'meal:'
 
 function formatMacro(value) {
   const decimals = value % 1 === 0 ? 0 : 1
@@ -71,7 +81,42 @@ function resolveUnit(product, unitId) {
   return units.find((unit) => unit.id === unitId) || GRAMS_UNIT
 }
 
+/**
+ * Select the full quantity so the next keypress replaces it.
+ * Defer past click caret placement; text inputs support selection reliably.
+ */
+function selectQuantityOnFocus(event) {
+  const input = event.currentTarget
+  const selectAll = () => {
+    if (typeof input.select === 'function') {
+      input.select()
+    }
+  }
+  selectAll()
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(selectAll)
+  } else {
+    window.setTimeout(selectAll, 0)
+  }
+}
+
+/** Keep focus-select from being cleared by the mouseup that follows click. */
+function preserveQuantitySelectionOnMouseUp(event) {
+  event.preventDefault()
+}
+
 function ingredientToForm(item, productsById) {
+  if (isMealIngredient(item)) {
+    return {
+      kind: 'meal',
+      productId: '',
+      mealId: item.mealId,
+      quantity: '',
+      multiplier: String(item.mealMultiplier ?? 1),
+      unitId: GRAMS_UNIT.id,
+    }
+  }
+
   const product = productsById.get(item.productId)
   const storedUnitId =
     typeof item.unitId === 'string' ? item.unitId.trim() : ''
@@ -89,16 +134,22 @@ function ingredientToForm(item, productsById) {
       const liveUnit = resolveUnit(product, storedUnitId)
       const quantity = item.quantityGrams / liveUnit.grams
       return {
+        kind: 'product',
         productId: item.productId,
+        mealId: '',
         quantity: String(quantity),
+        multiplier: '1',
         unitId: storedUnitId,
       }
     }
   }
 
   return {
+    kind: 'product',
     productId: item.productId,
+    mealId: '',
     quantity: String(item.quantityGrams),
+    multiplier: '1',
     unitId: GRAMS_UNIT.id,
   }
 }
@@ -133,7 +184,24 @@ function TagChips({ tags }) {
   )
 }
 
+function pickerValueForIngredient(ingredient) {
+  if (ingredient.kind === 'meal' && ingredient.mealId) {
+    return `${PICKER_PREFIX_MEAL}${ingredient.mealId}`
+  }
+  if (ingredient.kind === 'product' && ingredient.productId) {
+    return `${PICKER_PREFIX_PRODUCT}${ingredient.productId}`
+  }
+  return ''
+}
+
 function buildIngredientPayload(item, productsById) {
+  if (item.kind === 'meal') {
+    return {
+      mealId: item.mealId,
+      mealMultiplier: Number(item.multiplier),
+    }
+  }
+
   const product = productsById.get(item.productId)
   const unit = resolveUnit(product, item.unitId)
   const quantityGrams = quantityToGrams(item.quantity, unit.grams)
@@ -163,6 +231,7 @@ function MealsPage() {
   const [errors, setErrors] = useState({})
 
   const productsById = new Map(products.map((product) => [product.id, product]))
+  const mealsById = new Map(meals.map((meal) => [meal.id, meal]))
 
   function refreshMeals() {
     setMeals(getMeals())
@@ -175,6 +244,7 @@ function MealsPage() {
 
   function openAdd() {
     refreshProducts()
+    setMeals(getMeals())
     setEditingId(null)
     setForm({
       name: '',
@@ -187,7 +257,9 @@ function MealsPage() {
 
   function openEdit(meal) {
     const latestProducts = getProducts()
+    const latestMeals = getMeals()
     setProducts(latestProducts)
+    setMeals(latestMeals)
     const latestById = new Map(
       latestProducts.map((product) => [product.id, product]),
     )
@@ -234,6 +306,41 @@ function MealsPage() {
     }))
   }
 
+  function handleComponentPick(index, rawValue) {
+    setForm((current) => ({
+      ...current,
+      ingredients: current.ingredients.map((item, itemIndex) => {
+        if (itemIndex !== index) {
+          return item
+        }
+        if (!rawValue) {
+          return { ...EMPTY_INGREDIENT }
+        }
+        if (rawValue.startsWith(PICKER_PREFIX_MEAL)) {
+          return {
+            kind: 'meal',
+            productId: '',
+            mealId: rawValue.slice(PICKER_PREFIX_MEAL.length),
+            quantity: '',
+            multiplier: '1',
+            unitId: GRAMS_UNIT.id,
+          }
+        }
+        if (rawValue.startsWith(PICKER_PREFIX_PRODUCT)) {
+          return {
+            kind: 'product',
+            productId: rawValue.slice(PICKER_PREFIX_PRODUCT.length),
+            mealId: '',
+            unitId: GRAMS_UNIT.id,
+            quantity: defaultQuantityForUnit(GRAMS_UNIT),
+            multiplier: '1',
+          }
+        }
+        return item
+      }),
+    }))
+  }
+
   function handleIngredientChange(index, field, value) {
     setForm((current) => ({
       ...current,
@@ -241,11 +348,13 @@ function MealsPage() {
         if (itemIndex !== index) {
           return item
         }
-        if (field === 'productId') {
+        if (field === 'unitId') {
+          const product = productsById.get(item.productId)
+          const unit = resolveUnit(product, value)
           return {
             ...item,
-            productId: value,
-            unitId: GRAMS_UNIT.id,
+            unitId: value,
+            quantity: defaultQuantityForUnit(unit),
           }
         }
         return { ...item, [field]: value }
@@ -277,8 +386,8 @@ function MealsPage() {
     }
 
     const result = editingId
-      ? updateMeal(editingId, payload, products)
-      : addMeal(payload, products)
+      ? updateMeal(editingId, payload, products, meals)
+      : addMeal(payload, products, meals)
 
     if (!result.ok) {
       setErrors(result.errors)
@@ -310,6 +419,7 @@ function MealsPage() {
       ),
     },
     products,
+    meals,
   )
 
   const normalizedQuery = query.trim().toLowerCase()
@@ -324,12 +434,15 @@ function MealsPage() {
     return meal.name.toLowerCase().includes(normalizedQuery)
   })
 
+  const selectableMeals = meals.filter((meal) => meal.id !== editingId)
+
   if (view === 'form') {
     const isEdit = Boolean(editingId)
     const ingredientErrors = Array.isArray(errors.ingredients)
       ? errors.ingredients
       : []
     const tagsError = errors.tags || errors.tag
+    const hasComponents = products.length > 0 || selectableMeals.length > 0
 
     return (
       <section className="page">
@@ -422,9 +535,9 @@ function MealsPage() {
               <p className="product-field__error">{errors.ingredients}</p>
             ) : null}
 
-            {products.length === 0 ? (
+            {!hasComponents ? (
               <p className="meal-ingredients__hint">
-                אין מוצרים זמינים. הוסיפו מוצרים בעמוד המוצרים תחילה.
+                אין מוצרים או ארוחות זמינים. הוסיפו מוצרים בעמוד המוצרים תחילה.
               </p>
             ) : null}
 
@@ -433,98 +546,168 @@ function MealsPage() {
                 const itemErrors = ingredientErrors[index] || {}
                 const productErrorId = `meal-ingredient-product-${index}-error`
                 const quantityErrorId = `meal-ingredient-qty-${index}-error`
+                const multiplierErrorId = `meal-ingredient-mult-${index}-error`
                 const product = productsById.get(ingredient.productId)
                 const unitOptions = getProductUnits(product)
+                const isMealRow = ingredient.kind === 'meal'
+                const nestedMeal = mealsById.get(ingredient.mealId)
+                const componentError =
+                  itemErrors.productId || itemErrors.mealId
 
                 return (
-                  <li key={index} className="meal-ingredient-row">
+                  <li
+                    key={index}
+                    className={
+                      isMealRow
+                        ? 'meal-ingredient-row meal-ingredient-row--meal'
+                        : 'meal-ingredient-row'
+                    }
+                  >
                     <div className="meal-ingredient-row__main meal-ingredient-row__main--units">
                       <label
                         className="visually-hidden"
                         htmlFor={`meal-ingredient-product-${index}`}
                       >
-                        מוצר
+                        מרכיב
                       </label>
                       <select
                         id={`meal-ingredient-product-${index}`}
-                        className="meal-ingredient-row__product"
-                        value={ingredient.productId}
-                        onChange={(event) =>
-                          handleIngredientChange(
-                            index,
-                            'productId',
-                            event.target.value,
-                          )
+                        className={
+                          isMealRow
+                            ? 'meal-ingredient-row__product meal-ingredient-row__product--meal'
+                            : 'meal-ingredient-row__product'
                         }
-                        aria-invalid={Boolean(itemErrors.productId)}
+                        value={pickerValueForIngredient(ingredient)}
+                        onChange={(event) =>
+                          handleComponentPick(index, event.target.value)
+                        }
+                        aria-invalid={Boolean(componentError)}
                         aria-describedby={
-                          itemErrors.productId ? productErrorId : undefined
+                          componentError ? productErrorId : undefined
                         }
                       >
-                        <option value="">בחרו מוצר</option>
-                        {products.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.name}
-                          </option>
-                        ))}
+                        <option value="">בחרו מוצר או ארוחה</option>
+                        {products.length > 0 ? (
+                          <optgroup label="מוצרים">
+                            {products.map((item) => (
+                              <option
+                                key={item.id}
+                                value={`${PICKER_PREFIX_PRODUCT}${item.id}`}
+                              >
+                                {item.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ) : null}
+                        {selectableMeals.length > 0 ? (
+                          <optgroup label="ארוחות שמורות">
+                            {selectableMeals.map((item) => (
+                              <option
+                                key={item.id}
+                                value={`${PICKER_PREFIX_MEAL}${item.id}`}
+                              >
+                                🍽️ {item.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ) : null}
                       </select>
 
-                      <div className="meal-ingredient-row__qty meal-ingredient-row__qty--with-select">
-                        <label
-                          className="visually-hidden"
-                          htmlFor={`meal-ingredient-qty-${index}`}
-                        >
-                          כמות
-                        </label>
-                        <input
-                          id={`meal-ingredient-qty-${index}`}
-                          type="number"
-                          inputMode="decimal"
-                          min="0"
-                          step="any"
-                          className="input-ltr meal-ingredient-row__qty-input"
-                          value={ingredient.quantity}
-                          onChange={(event) =>
-                            handleIngredientChange(
-                              index,
-                              'quantity',
-                              event.target.value,
-                            )
-                          }
-                          placeholder="2"
-                          aria-invalid={Boolean(itemErrors.quantityGrams)}
-                          aria-describedby={
-                            itemErrors.quantityGrams
-                              ? quantityErrorId
-                              : undefined
-                          }
-                        />
-                        <label
-                          className="visually-hidden"
-                          htmlFor={`meal-ingredient-unit-${index}`}
-                        >
-                          יחידה
-                        </label>
-                        <select
-                          id={`meal-ingredient-unit-${index}`}
-                          className="meal-ingredient-row__unit-select"
-                          value={ingredient.unitId}
-                          onChange={(event) =>
-                            handleIngredientChange(
-                              index,
-                              'unitId',
-                              event.target.value,
-                            )
-                          }
-                          disabled={!ingredient.productId}
-                        >
-                          {unitOptions.map((unit) => (
-                            <option key={unit.id} value={unit.id}>
-                              {unit.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
+                      {isMealRow ? (
+                        <div className="meal-ingredient-row__qty meal-ingredient-row__qty--with-select">
+                          <label
+                            className="visually-hidden"
+                            htmlFor={`meal-ingredient-mult-${index}`}
+                          >
+                            מכפיל ארוחה
+                          </label>
+                          <input
+                            id={`meal-ingredient-mult-${index}`}
+                            type="text"
+                            inputMode="decimal"
+                            className="input-ltr meal-ingredient-row__qty-input"
+                            value={ingredient.multiplier}
+                            onChange={(event) =>
+                              handleIngredientChange(
+                                index,
+                                'multiplier',
+                                event.target.value,
+                              )
+                            }
+                            onFocus={selectQuantityOnFocus}
+                            onClick={selectQuantityOnFocus}
+                            onMouseUp={preserveQuantitySelectionOnMouseUp}
+                            placeholder="1"
+                            aria-invalid={Boolean(itemErrors.mealMultiplier)}
+                            aria-describedby={
+                              itemErrors.mealMultiplier
+                                ? multiplierErrorId
+                                : undefined
+                            }
+                          />
+                          <span className="meal-ingredient-row__unit">
+                            × מכפיל
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="meal-ingredient-row__qty meal-ingredient-row__qty--with-select">
+                          <label
+                            className="visually-hidden"
+                            htmlFor={`meal-ingredient-qty-${index}`}
+                          >
+                            כמות
+                          </label>
+                          <input
+                            id={`meal-ingredient-qty-${index}`}
+                            type="text"
+                            inputMode="decimal"
+                            className="input-ltr meal-ingredient-row__qty-input"
+                            value={ingredient.quantity}
+                            onChange={(event) =>
+                              handleIngredientChange(
+                                index,
+                                'quantity',
+                                event.target.value,
+                              )
+                            }
+                            onFocus={selectQuantityOnFocus}
+                            onClick={selectQuantityOnFocus}
+                            onMouseUp={preserveQuantitySelectionOnMouseUp}
+                            placeholder="2"
+                            aria-invalid={Boolean(itemErrors.quantityGrams)}
+                            aria-describedby={
+                              itemErrors.quantityGrams
+                                ? quantityErrorId
+                                : undefined
+                            }
+                          />
+                          <label
+                            className="visually-hidden"
+                            htmlFor={`meal-ingredient-unit-${index}`}
+                          >
+                            יחידה
+                          </label>
+                          <select
+                            id={`meal-ingredient-unit-${index}`}
+                            className="meal-ingredient-row__unit-select"
+                            value={ingredient.unitId}
+                            onChange={(event) =>
+                              handleIngredientChange(
+                                index,
+                                'unitId',
+                                event.target.value,
+                              )
+                            }
+                            disabled={!ingredient.productId}
+                          >
+                            {unitOptions.map((unit) => (
+                              <option key={unit.id} value={unit.id}>
+                                {unit.name}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
 
                       <button
                         type="button"
@@ -536,14 +719,25 @@ function MealsPage() {
                       </button>
                     </div>
 
-                    {itemErrors.productId ? (
+                    {isMealRow && nestedMeal ? (
+                      <p className="meal-ingredient-row__meal-hint">
+                        ארוחה שמורה · הערכים התזונתיים מחושבים לפי המכפיל
+                      </p>
+                    ) : null}
+
+                    {componentError ? (
                       <p id={productErrorId} className="product-field__error">
-                        {itemErrors.productId}
+                        {componentError}
                       </p>
                     ) : null}
                     {itemErrors.quantityGrams ? (
                       <p id={quantityErrorId} className="product-field__error">
                         {itemErrors.quantityGrams}
+                      </p>
+                    ) : null}
+                    {itemErrors.mealMultiplier ? (
+                      <p id={multiplierErrorId} className="product-field__error">
+                        {itemErrors.mealMultiplier}
                       </p>
                     ) : null}
                   </li>
@@ -676,8 +870,11 @@ function MealsPage() {
       ) : (
         <ul className="meal-list">
           {visibleMeals.map((meal) => {
-            const nutrition = calculateMealNutrition(meal, products)
+            const nutrition = calculateMealNutrition(meal, products, meals)
             const tags = mealTagsList(meal)
+            const nestedCount = Array.isArray(meal.ingredients)
+              ? meal.ingredients.filter((item) => isMealIngredient(item)).length
+              : 0
 
             return (
               <li key={meal.id} className="meal-card">
@@ -685,6 +882,11 @@ function MealsPage() {
                   <div className="meal-card__info">
                     <span className="meal-card__name">{meal.name}</span>
                     <TagChips tags={tags} />
+                    {nestedCount > 0 ? (
+                      <span className="meal-card__nested">
+                        כוללת {nestedCount} ארוחות מקוננות
+                      </span>
+                    ) : null}
                     <span className="meal-card__nutrition">
                       <span className="num">{formatMacro(nutrition.calories)}</span>
                       {' קל׳ · '}

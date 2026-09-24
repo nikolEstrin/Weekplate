@@ -1,3 +1,9 @@
+import {
+  buildMealsById,
+  isMealIngredient,
+  isProductIngredient,
+} from './mealTree.js'
+
 function toSafeNumber(value) {
   const number = typeof value === 'number' ? value : Number(value)
   return Number.isFinite(number) ? number : 0
@@ -46,14 +52,27 @@ export function sumNutrition(items) {
   return totals
 }
 
+function scaleNutrition(nutrition, multiplier) {
+  const factor = toSafeNumber(multiplier)
+  const source = nutrition && typeof nutrition === 'object' ? nutrition : {}
+  return {
+    calories: toSafeNumber(source.calories) * factor,
+    protein: toSafeNumber(source.protein) * factor,
+    carbs: toSafeNumber(source.carbs) * factor,
+    fat: toSafeNumber(source.fat) * factor,
+  }
+}
+
 /**
  * Total nutrition for a meal from its ingredients.
- * Missing products are skipped (treated as zero contribution).
+ * Nested meal components are included via mealMultiplier.
+ * Missing products/meals are skipped (treated as zero contribution).
  */
-export function calculateMealNutrition(meal, products) {
+export function calculateMealNutrition(meal, products, meals = []) {
   const source = meal && typeof meal === 'object' ? meal : {}
   const ingredients = Array.isArray(source.ingredients) ? source.ingredients : []
   const productList = Array.isArray(products) ? products : []
+  const mealsById = buildMealsById(meals)
 
   const productsById = new Map()
   for (const product of productList) {
@@ -62,23 +81,43 @@ export function calculateMealNutrition(meal, products) {
     }
   }
 
+  const visiting = new Set()
+  const mealId = typeof source.id === 'string' ? source.id : null
+  if (mealId) {
+    visiting.add(mealId)
+  }
+
   const nutritionItems = []
   for (const ingredient of ingredients) {
     if (!ingredient || typeof ingredient !== 'object') {
       continue
     }
-    if (typeof ingredient.productId !== 'string') {
+
+    if (isProductIngredient(ingredient)) {
+      const product = productsById.get(ingredient.productId.trim())
+      if (!product) {
+        continue
+      }
+      nutritionItems.push(
+        calculateProductNutrition(product, ingredient.quantityGrams),
+      )
       continue
     }
 
-    const product = productsById.get(ingredient.productId)
-    if (!product) {
-      continue
+    if (isMealIngredient(ingredient)) {
+      const childId = ingredient.mealId.trim()
+      if (visiting.has(childId)) {
+        continue
+      }
+      const child = mealsById.get(childId)
+      if (!child) {
+        continue
+      }
+      const multiplier = toSafeNumber(ingredient.mealMultiplier)
+      const safeMultiplier = multiplier > 0 ? multiplier : 1
+      const childNutrition = calculateMealNutrition(child, productList, meals)
+      nutritionItems.push(scaleNutrition(childNutrition, safeMultiplier))
     }
-
-    nutritionItems.push(
-      calculateProductNutrition(product, ingredient.quantityGrams),
-    )
   }
 
   return sumNutrition(nutritionItems)
@@ -89,6 +128,7 @@ export function calculateMealNutrition(meal, products) {
  * Uses live product data when available; falls back to per-ingredient
  * nutrition snapshots (for deleted products). Does not reimplement the
  * per-100g formula — delegates to calculateProductNutrition.
+ * Planner snapshots are already flattened to products.
  */
 export function calculatePlannerNutrition(items, products) {
   const list = Array.isArray(items) ? items : []

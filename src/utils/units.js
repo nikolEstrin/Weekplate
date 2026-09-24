@@ -21,6 +21,19 @@ export const GRAMS_UNIT = {
 }
 
 /**
+ * Default quantity shown when picking a unit in product→meal / add-product flows.
+ * Grams start at 100; count-style units (יחידה, קופסה, …) start at 1.
+ * @param {{ id?: string } | null | undefined} unit
+ * @returns {string}
+ */
+export function defaultQuantityForUnit(unit) {
+  if (!unit || unit.id === GRAMS_UNIT.id) {
+    return '100'
+  }
+  return '1'
+}
+
+/**
  * Convert a quantity in a given unit to grams.
  * @param {number|string} quantity - how many of the unit
  * @param {number|string} unitGrams - grams per 1 unit (use 1 for base grams)

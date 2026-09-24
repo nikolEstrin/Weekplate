@@ -1,6 +1,18 @@
 import {
+  buildMealsById,
+  isMealIngredient,
+  isProductIngredient,
+  validateAllMealTrees,
+  validateMealTree,
+} from '../utils/mealTree.js'
+import {
+  buildShoppingList,
+  shoppingSelectionKey,
+} from '../utils/shoppingList.js'
+import {
   GRAMS_UNIT,
   UNIT_NAME_SUGGESTIONS,
+  defaultQuantityForUnit,
   quantityToGrams,
 } from '../utils/units.js'
 
@@ -10,8 +22,14 @@ const GOALS_KEY = 'weekplate_goals'
 const PLANS_KEY = 'weekplate_plans'
 const TODAY_KEY = 'weekplate_today'
 const MIGRATIONS_KEY = 'weekplate_migrations'
+const SHOPPING_PURCHASED_KEY = 'weekplate_shopping_purchased'
 
-export { GRAMS_UNIT, UNIT_NAME_SUGGESTIONS, quantityToGrams }
+export {
+  GRAMS_UNIT,
+  UNIT_NAME_SUGGESTIONS,
+  defaultQuantityForUnit,
+  quantityToGrams,
+}
 
 const NUTRITION_FIELDS = [
   'caloriesPer100g',
@@ -437,7 +455,7 @@ export function deleteProduct(id) {
     rawMeals = []
   }
 
-  const cleanedMeals = []
+  const stripped = []
   for (const meal of rawMeals) {
     if (!meal || typeof meal !== 'object') {
       continue
@@ -454,7 +472,10 @@ export function deleteProduct(id) {
       if (!ingredient || typeof ingredient !== 'object') {
         continue
       }
-      if (ingredient.productId === id) {
+      if (
+        isProductIngredient(ingredient) &&
+        ingredient.productId.trim() === id
+      ) {
         continue
       }
       ingredients.push(ingredient)
@@ -464,29 +485,118 @@ export function deleteProduct(id) {
       continue
     }
 
-    const result = validateMeal({ ...meal, ingredients }, next)
-    if (!result.ok) {
-      continue
-    }
-
-    cleanedMeals.push({
-      id: meal.id,
-      ...result.meal,
-    })
+    stripped.push({ ...meal, ingredients })
   }
+
+  const cleanedMeals = filterValidMeals(stripped, next)
   saveMeals(cleanedMeals)
 
   return true
 }
 
-export function validateMeal(input, products) {
+/**
+ * Normalize + tree-validate a meal list against each other.
+ * Drops invalid meals and repeats until meal references stabilize.
+ */
+function filterValidMeals(rawMeals, products) {
+  const productList = Array.isArray(products) ? products : getProducts()
+  let candidates = Array.isArray(rawMeals) ? [...rawMeals] : []
+
+  for (let pass = 0; pass < 20; pass += 1) {
+    const beforeIds = candidates
+      .map((meal) => (meal && typeof meal.id === 'string' ? meal.id : ''))
+      .filter(Boolean)
+      .sort()
+      .join('|')
+
+    const mealIds = new Set(
+      candidates
+        .filter((meal) => meal && typeof meal.id === 'string')
+        .map((meal) => meal.id),
+    )
+    const normalized = []
+
+    for (const item of candidates) {
+      if (!item || typeof item !== 'object') {
+        continue
+      }
+      if (typeof item.id !== 'string' || item.id.trim() === '') {
+        continue
+      }
+
+      const catalog = candidates.filter((meal) => meal && meal.id !== item.id)
+      const result = validateMeal(item, productList, catalog, {
+        selfId: item.id,
+        skipCatalogTreeCheck: true,
+      })
+      if (!result.ok) {
+        continue
+      }
+
+      const hasDangling = result.meal.ingredients.some(
+        (ingredient) =>
+          isMealIngredient(ingredient) && !mealIds.has(ingredient.mealId),
+      )
+      if (hasDangling) {
+        continue
+      }
+
+      normalized.push({
+        id: item.id,
+        ...result.meal,
+      })
+    }
+
+    const mealsById = buildMealsById(normalized)
+    const productsById = new Map(
+      productList
+        .filter((product) => product && typeof product.id === 'string')
+        .map((product) => [product.id, product]),
+    )
+
+    const treeChecked = []
+    for (const meal of normalized) {
+      const treeResult = validateMealTree(meal, mealsById, productsById)
+      if (!treeResult.ok) {
+        continue
+      }
+      treeChecked.push(meal)
+    }
+
+    const afterIds = treeChecked
+      .map((meal) => meal.id)
+      .sort()
+      .join('|')
+
+    candidates = treeChecked
+    if (beforeIds === afterIds) {
+      return treeChecked
+    }
+  }
+
+  return candidates
+}
+
+export function validateMeal(input, products, meals = [], options = {}) {
   const errors = {}
   const source = input && typeof input === 'object' ? input : {}
   const productList = Array.isArray(products) ? products : []
+  const mealList = Array.isArray(meals) ? meals : []
+  const selfId =
+    typeof options.selfId === 'string' && options.selfId.trim() !== ''
+      ? options.selfId.trim()
+      : null
+  const skipCatalogTreeCheck = Boolean(options.skipCatalogTreeCheck)
+
   const productIds = new Set(
     productList
       .filter((product) => product && typeof product.id === 'string')
       .map((product) => product.id),
+  )
+  const mealIds = new Set(
+    mealList
+      .filter((meal) => meal && typeof meal.id === 'string')
+      .map((meal) => meal.id),
   )
 
   const name = typeof source.name === 'string' ? source.name.trim() : ''
@@ -521,29 +631,60 @@ export function validateMeal(input, products) {
 
       const productId =
         typeof entry.productId === 'string' ? entry.productId.trim() : ''
-      if (!productId || !productIds.has(productId)) {
-        itemErrors.productId = 'המוצר לא נמצא'
-      }
+      const mealId =
+        typeof entry.mealId === 'string' ? entry.mealId.trim() : ''
 
-      const quantityGrams = parseNumber(entry.quantityGrams)
-      if (!Number.isFinite(quantityGrams)) {
-        itemErrors.quantityGrams = 'יש להזין מספר תקין'
-      } else if (quantityGrams <= 0) {
-        itemErrors.quantityGrams = 'הכמות חייבת להיות גדולה מאפס'
+      if (productId && mealId) {
+        itemErrors.productId = 'מרכיב לא יכול להיות גם מוצר וגם ארוחה'
+      } else if (mealId) {
+        if (selfId && mealId === selfId) {
+          itemErrors.mealId = 'לא ניתן להוסיף ארוחה לעצמה'
+        } else if (!mealIds.has(mealId)) {
+          itemErrors.mealId = 'הארוחה לא נמצאה'
+        }
+
+        const mealMultiplier = parseNumber(entry.mealMultiplier)
+        if (!Number.isFinite(mealMultiplier)) {
+          itemErrors.mealMultiplier = 'יש להזין מספר תקין'
+        } else if (mealMultiplier <= 0) {
+          itemErrors.mealMultiplier = 'המכפיל חייב להיות גדול מאפס'
+        }
+
+        if (Object.keys(itemErrors).length === 0) {
+          ingredients.push({
+            mealId,
+            mealMultiplier,
+          })
+        }
+      } else if (productId) {
+        if (!productIds.has(productId)) {
+          itemErrors.productId = 'המוצר לא נמצא'
+        }
+
+        const quantityGrams = parseNumber(entry.quantityGrams)
+        if (!Number.isFinite(quantityGrams)) {
+          itemErrors.quantityGrams = 'יש להזין מספר תקין'
+        } else if (quantityGrams <= 0) {
+          itemErrors.quantityGrams = 'הכמות חייבת להיות גדולה מאפס'
+        }
+
+        if (Object.keys(itemErrors).length === 0) {
+          // Grams are canonical. Optional unit* fields are UI convenience only
+          // (frozen at entry — never re-resolved from live product units).
+          const ingredient = {
+            productId,
+            quantityGrams,
+          }
+          attachUnitMetadata(ingredient, entry)
+          ingredients.push(ingredient)
+        }
+      } else {
+        itemErrors.productId = 'יש לבחור מוצר או ארוחה'
       }
 
       if (Object.keys(itemErrors).length > 0) {
         hasIngredientErrors = true
         ingredientErrors[index] = itemErrors
-      } else {
-        // Grams are canonical. Optional unit* fields are UI convenience only
-        // (frozen at entry — never re-resolved from live product units).
-        const ingredient = {
-          productId,
-          quantityGrams,
-        }
-        attachUnitMetadata(ingredient, entry)
-        ingredients.push(ingredient)
       }
     }
 
@@ -554,6 +695,46 @@ export function validateMeal(input, products) {
 
   if (Object.keys(errors).length > 0) {
     return { ok: false, errors, meal: null }
+  }
+
+  const draftMeal = {
+    id: selfId || '__draft__',
+    name,
+    tags,
+    ingredients,
+  }
+
+  const catalogMeals = mealList.filter(
+    (meal) => meal && typeof meal.id === 'string' && meal.id !== selfId,
+  )
+  const mealsById = buildMealsById(catalogMeals)
+  mealsById.set(draftMeal.id, draftMeal)
+
+  const productsById = new Map(
+    productList
+      .filter((product) => product && typeof product.id === 'string')
+      .map((product) => [product.id, product]),
+  )
+
+  const treeResult = validateMealTree(draftMeal, mealsById, productsById)
+  if (!treeResult.ok) {
+    return {
+      ok: false,
+      errors: { ingredients: treeResult.message },
+      meal: null,
+    }
+  }
+
+  if (!skipCatalogTreeCheck && selfId) {
+    const proposed = [...catalogMeals, draftMeal]
+    const allResult = validateAllMealTrees(proposed, productList)
+    if (!allResult.ok) {
+      return {
+        ok: false,
+        errors: { ingredients: allResult.message },
+        meal: null,
+      }
+    }
   }
 
   return {
@@ -647,33 +828,7 @@ function readStoredMeals(products) {
     }
 
     const productList = Array.isArray(products) ? products : getProducts()
-    const meals = []
-    const seenIds = new Set()
-
-    for (const item of parsed) {
-      if (!item || typeof item !== 'object') {
-        continue
-      }
-      if (typeof item.id !== 'string' || item.id.trim() === '') {
-        continue
-      }
-      if (seenIds.has(item.id)) {
-        continue
-      }
-
-      const result = validateMeal(item, productList)
-      if (!result.ok) {
-        continue
-      }
-
-      seenIds.add(item.id)
-      meals.push({
-        id: item.id,
-        ...result.meal,
-      })
-    }
-
-    return meals
+    return filterValidMeals(parsed, productList)
   } catch {
     return []
   }
@@ -691,9 +846,10 @@ export function saveMeals(meals) {
   localStorage.setItem(MEALS_KEY, JSON.stringify(meals))
 }
 
-export function addMeal(input, products) {
+export function addMeal(input, products, meals) {
   const productList = Array.isArray(products) ? products : getProducts()
-  const result = validateMeal(input, productList)
+  const mealList = Array.isArray(meals) ? meals : getMeals()
+  const result = validateMeal(input, productList, mealList)
   if (!result.ok) {
     return result
   }
@@ -703,26 +859,26 @@ export function addMeal(input, products) {
     ...result.meal,
   }
 
-  const meals = getMeals()
-  meals.push(meal)
-  saveMeals(meals)
+  const nextMeals = [...mealList, meal]
+  saveMeals(nextMeals)
 
   return { ok: true, errors: {}, meal }
 }
 
-export function updateMeal(id, input, products) {
+export function updateMeal(id, input, products, meals) {
   if (typeof id !== 'string' || id.trim() === '') {
     return { ok: false, errors: { id: 'הארוחה לא נמצאה' }, meal: null }
   }
 
-  const meals = getMeals()
-  const index = meals.findIndex((meal) => meal.id === id)
+  const mealList = Array.isArray(meals) ? meals : getMeals()
+  const index = mealList.findIndex((meal) => meal.id === id)
   if (index === -1) {
     return { ok: false, errors: { id: 'הארוחה לא נמצאה' }, meal: null }
   }
 
   const productList = Array.isArray(products) ? products : getProducts()
-  const result = validateMeal(input, productList)
+  const catalog = mealList.filter((meal) => meal.id !== id)
+  const result = validateMeal(input, productList, catalog, { selfId: id })
   if (!result.ok) {
     return result
   }
@@ -732,21 +888,68 @@ export function updateMeal(id, input, products) {
     ...result.meal,
   }
 
-  meals[index] = meal
-  saveMeals(meals)
+  const nextMeals = mealList.map((entry) => (entry.id === id ? meal : entry))
+  saveMeals(nextMeals)
 
   return { ok: true, errors: {}, meal }
 }
 
 export function deleteMeal(id) {
-  const meals = getMeals()
-  const next = meals.filter((meal) => meal.id !== id)
-
-  if (next.length === meals.length) {
+  if (typeof id !== 'string' || id.trim() === '') {
     return false
   }
 
-  saveMeals(next)
+  let rawMeals = []
+  try {
+    const raw = localStorage.getItem(MEALS_KEY)
+    if (raw != null && raw !== '') {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        rawMeals = parsed
+      }
+    }
+  } catch {
+    rawMeals = []
+  }
+
+  const exists = rawMeals.some((meal) => meal && meal.id === id)
+  if (!exists) {
+    return false
+  }
+
+  const stripped = []
+  for (const meal of rawMeals) {
+    if (!meal || typeof meal !== 'object') {
+      continue
+    }
+    if (typeof meal.id !== 'string' || meal.id.trim() === '') {
+      continue
+    }
+    if (meal.id === id) {
+      continue
+    }
+
+    const rawIngredients = Array.isArray(meal.ingredients)
+      ? meal.ingredients
+      : []
+    const ingredients = rawIngredients.filter((ingredient) => {
+      if (!ingredient || typeof ingredient !== 'object') {
+        return false
+      }
+      if (isMealIngredient(ingredient) && ingredient.mealId.trim() === id) {
+        return false
+      }
+      return true
+    })
+
+    if (ingredients.length === 0) {
+      continue
+    }
+
+    stripped.push({ ...meal, ingredients })
+  }
+
+  saveMeals(filterValidMeals(stripped, getProducts()))
   return true
 }
 
@@ -889,25 +1092,68 @@ export function validateLibraryImport(data, mode) {
       }
     }
 
-    const result = validateMeal(item, productListForMeals)
+    seenMealIds.add(id)
+    importedMeals.push(item)
+  }
+
+  // Structural + tree validation across the full imported meal set.
+  // For merge mode, also allow refs to existing meals not in the file.
+  let mealCatalogForImport
+  if (importMode === 'replace') {
+    mealCatalogForImport = importedMeals
+  } else {
+    const merged = new Map()
+    for (const meal of getMeals()) {
+      merged.set(meal.id, meal)
+    }
+    for (const meal of importedMeals) {
+      merged.set(meal.id, meal)
+    }
+    mealCatalogForImport = [...merged.values()]
+  }
+
+  const validatedMeals = []
+  for (const item of importedMeals) {
+    const catalog = mealCatalogForImport.filter((meal) => meal.id !== item.id)
+    const result = validateMeal(item, productListForMeals, catalog, {
+      selfId: item.id,
+    })
     if (!result.ok) {
       return {
         ok: false,
-        error: `ארוחה לא תקינה (${id || index + 1})`,
+        error: `ארוחה לא תקינה (${item.id})`,
       }
     }
-
-    seenMealIds.add(id)
-    importedMeals.push({
-      id,
+    validatedMeals.push({
+      id: item.id,
       ...result.meal,
     })
+  }
+
+  // Final catalog tree check for merge (imported + untouched existing).
+  let proposedCatalog
+  if (importMode === 'replace') {
+    proposedCatalog = validatedMeals
+  } else {
+    const merged = new Map()
+    for (const meal of getMeals()) {
+      merged.set(meal.id, meal)
+    }
+    for (const meal of validatedMeals) {
+      merged.set(meal.id, meal)
+    }
+    proposedCatalog = [...merged.values()]
+  }
+
+  const allTree = validateAllMealTrees(proposedCatalog, productListForMeals)
+  if (!allTree.ok) {
+    return { ok: false, error: allTree.message }
   }
 
   return {
     ok: true,
     products: importedProducts,
-    meals: importedMeals,
+    meals: validatedMeals,
   }
 }
 
@@ -1482,6 +1728,151 @@ export function saveDayPlan(dateKey, plan) {
   return normalized
 }
 
+export function isDayPlanEmpty(plan) {
+  const normalized = normalizeDayPlan(plan)
+  return (
+    normalized.breakfast == null &&
+    normalized.lunch == null &&
+    normalized.dinner == null &&
+    normalized.snacks.length === 0
+  )
+}
+
+/** Slot/name rows for confirmation UIs (does not mutate). */
+export function summarizeDayPlan(plan) {
+  const normalized = normalizeDayPlan(plan)
+  const rows = []
+
+  for (const slot of PRIMARY_SLOTS) {
+    const item = normalized[slot]
+    if (item) {
+      rows.push({ slot, name: item.name })
+    }
+  }
+
+  for (const snack of normalized.snacks) {
+    rows.push({ slot: 'snack', name: snack.name })
+  }
+
+  return rows
+}
+
+function clonePlannerItemIndependent(item) {
+  const normalized = normalizePlannerItem(item)
+  if (!normalized) {
+    return null
+  }
+
+  const cloned = {
+    id: createId(),
+    type: normalized.type,
+    name: normalized.name,
+    ingredients: cloneIngredients(normalized.ingredients),
+  }
+
+  if (normalized.type === 'meal') {
+    if (Array.isArray(normalized.tags) && normalized.tags.length > 0) {
+      cloned.tags = [...normalized.tags]
+    }
+    if (typeof normalized.sourceMealId === 'string') {
+      cloned.sourceMealId = normalized.sourceMealId
+    }
+    cloned.mealMultiplier = parseMealMultiplier(normalized.mealMultiplier)
+    cloned.baseIngredients = cloneIngredients(normalized.baseIngredients)
+  }
+
+  return cloned
+}
+
+/**
+ * Deep-clone a day plan with new item ids (independent planning data).
+ * Preserves slots, quantities, multipliers, and ingredient overrides.
+ */
+export function cloneDayPlanIndependent(plan) {
+  const source = normalizeDayPlan(plan)
+  const next = getEmptyDayPlan()
+
+  for (const slot of PRIMARY_SLOTS) {
+    next[slot] = source[slot]
+      ? clonePlannerItemIndependent(source[slot])
+      : null
+  }
+
+  next.snacks = source.snacks
+    .map((item) => clonePlannerItemIndependent(item))
+    .filter(Boolean)
+
+  return next
+}
+
+/**
+ * Copy a day's plan onto another date as independent snapshots.
+ * If the destination already has items and replaceExplicitly is not set,
+ * returns needsReplace without writing.
+ */
+export function copyDayPlan(sourceDateKey, destinationDateKey, options = {}) {
+  ensureMigrations()
+
+  const sourceKey =
+    typeof sourceDateKey === 'string' && sourceDateKey.trim() !== ''
+      ? sourceDateKey.trim()
+      : getLocalDateKey()
+  const destKey =
+    typeof destinationDateKey === 'string' && destinationDateKey.trim() !== ''
+      ? destinationDateKey.trim()
+      : ''
+
+  if (!destKey) {
+    return {
+      ok: false,
+      needsReplace: false,
+      errors: { destination: 'יש לבחור תאריך יעד' },
+      existing: null,
+      summary: [],
+      plan: getDayPlan(sourceKey),
+    }
+  }
+
+  if (sourceKey === destKey) {
+    return {
+      ok: false,
+      needsReplace: false,
+      errors: { destination: 'תאריך היעד חייב להיות שונה מיום המקור' },
+      existing: null,
+      summary: [],
+      plan: getDayPlan(sourceKey),
+    }
+  }
+
+  const sourcePlan = getDayPlan(sourceKey)
+  const existingPlan = getDayPlan(destKey)
+  const summary = summarizeDayPlan(existingPlan)
+
+  if (!isDayPlanEmpty(existingPlan) && !options.replaceExplicitly) {
+    return {
+      ok: false,
+      needsReplace: true,
+      errors: {},
+      existing: existingPlan,
+      summary,
+      plan: existingPlan,
+    }
+  }
+
+  const cloned = cloneDayPlanIndependent(sourcePlan)
+  const saved = saveDayPlan(destKey, cloned)
+
+  return {
+    ok: true,
+    needsReplace: false,
+    errors: {},
+    existing: null,
+    summary: [],
+    plan: saved,
+    destinationDateKey: destKey,
+  }
+}
+
 function ensureDayExists(dateKey) {
   const key =
     typeof dateKey === 'string' && dateKey.trim() !== ''
@@ -1507,12 +1898,82 @@ function normalizeSlotId(slot) {
   return null
 }
 
+function expandMealToProductSnapshots(
+  meal,
+  products,
+  mealsById,
+  multiplier,
+  visiting,
+) {
+  const source = meal && typeof meal === 'object' ? meal : null
+  if (!source) {
+    return []
+  }
+
+  const mealId = typeof source.id === 'string' ? source.id : null
+  if (mealId) {
+    if (visiting.has(mealId)) {
+      return []
+    }
+    visiting.add(mealId)
+  }
+
+  const scale = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1
+  const rawIngredients = Array.isArray(source.ingredients)
+    ? source.ingredients
+    : []
+  const snapshots = []
+
+  for (const ingredient of rawIngredients) {
+    if (!ingredient || typeof ingredient !== 'object') {
+      continue
+    }
+
+    if (isProductIngredient(ingredient)) {
+      const quantityGrams = parseNumber(ingredient.quantityGrams) * scale
+      const snapshot = snapshotIngredient(
+        { ...ingredient, quantityGrams },
+        products,
+      )
+      if (snapshot) {
+        snapshots.push(snapshot)
+      }
+      continue
+    }
+
+    if (isMealIngredient(ingredient)) {
+      const childId = ingredient.mealId.trim()
+      const child = mealsById.get(childId)
+      if (!child) {
+        continue
+      }
+      const childMultiplier = parseMealMultiplier(ingredient.mealMultiplier) * scale
+      snapshots.push(
+        ...expandMealToProductSnapshots(
+          child,
+          products,
+          mealsById,
+          childMultiplier,
+          visiting,
+        ),
+      )
+    }
+  }
+
+  if (mealId) {
+    visiting.delete(mealId)
+  }
+
+  return snapshots
+}
+
 /**
  * Deep-clones a saved meal into a planner snapshot (does not persist).
+ * Nested meal components are flattened to product ingredients with scaled grams.
  * Sets baseIngredients (recipe grams) + mealMultiplier: 1; ingredients equal base.
- * Saved meals themselves never carry mealMultiplier.
+ * Saved meals themselves never carry planner mealMultiplier.
  */
-export function createMealSnapshot(meal, products) {
+export function createMealSnapshot(meal, products, meals) {
   const source = meal && typeof meal === 'object' ? meal : null
   if (!source) {
     return { ok: false, errors: { meal: 'הארוחה לא נמצאה' }, item: null }
@@ -1524,15 +1985,16 @@ export function createMealSnapshot(meal, products) {
   }
 
   const productList = Array.isArray(products) ? products : getProducts()
-  const rawIngredients = Array.isArray(source.ingredients) ? source.ingredients : []
-  const ingredients = []
+  const mealList = Array.isArray(meals) ? meals : getMeals()
+  const mealsById = buildMealsById(mealList)
 
-  for (const ingredient of rawIngredients) {
-    const snapshot = snapshotIngredient(ingredient, productList)
-    if (snapshot) {
-      ingredients.push(snapshot)
-    }
-  }
+  const ingredients = expandMealToProductSnapshots(
+    source,
+    productList,
+    mealsById,
+    1,
+    new Set(),
+  )
 
   if (ingredients.length === 0) {
     return {
@@ -2090,6 +2552,108 @@ export function updateTodayItemQuantity(itemId, ingredientIndex, quantityGrams) 
 
 export function removeTodayItem(itemId) {
   return removePlannerItem(getLocalDateKey(), itemId)
+}
+
+/**
+ * Generate a shopping list from one or more planned dates.
+ * Does not mutate products, meals, or plans.
+ */
+export function generateShoppingList(dateKeys) {
+  ensureMigrations()
+  const keys = Array.isArray(dateKeys) ? dateKeys : []
+  const plans = readStoredPlans()
+  const plansByDate = {}
+  for (const key of keys) {
+    if (typeof key !== 'string' || key.trim() === '') {
+      continue
+    }
+    const trimmed = key.trim()
+    plansByDate[trimmed] = plans[trimmed]
+      ? normalizeDayPlan(plans[trimmed])
+      : getEmptyDayPlan()
+  }
+  return buildShoppingList(keys, plansByDate, getProducts())
+}
+
+function readShoppingPurchasedStore() {
+  try {
+    const raw = localStorage.getItem(SHOPPING_PURCHASED_KEY)
+    if (raw == null || raw === '') {
+      return {}
+    }
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {}
+    }
+    return parsed
+  } catch {
+    return {}
+  }
+}
+
+function writeShoppingPurchasedStore(store) {
+  localStorage.setItem(SHOPPING_PURCHASED_KEY, JSON.stringify(store))
+}
+
+/**
+ * Purchased flags for a shopping selection (sorted date keys).
+ * Independent of products / meals / plans.
+ * @returns {Record<string, boolean>}
+ */
+export function getShoppingPurchased(dateKeys) {
+  const selection = shoppingSelectionKey(dateKeys)
+  if (!selection) {
+    return {}
+  }
+  const store = readShoppingPurchasedStore()
+  const entry = store[selection]
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    return {}
+  }
+  const result = {}
+  for (const [itemId, value] of Object.entries(entry)) {
+    if (value === true) {
+      result[itemId] = true
+    }
+  }
+  return result
+}
+
+/**
+ * Mark / unmark a shopping-list line as purchased.
+ * Does not change products, meals, or plans.
+ */
+export function setShoppingItemPurchased(dateKeys, itemId, purchased) {
+  if (typeof itemId !== 'string' || itemId.trim() === '') {
+    return getShoppingPurchased(dateKeys)
+  }
+  const selection = shoppingSelectionKey(dateKeys)
+  if (!selection) {
+    return {}
+  }
+
+  const store = readShoppingPurchasedStore()
+  const current =
+    store[selection] &&
+    typeof store[selection] === 'object' &&
+    !Array.isArray(store[selection])
+      ? { ...store[selection] }
+      : {}
+
+  if (purchased) {
+    current[itemId.trim()] = true
+  } else {
+    delete current[itemId.trim()]
+  }
+
+  if (Object.keys(current).length === 0) {
+    delete store[selection]
+  } else {
+    store[selection] = current
+  }
+
+  writeShoppingPurchasedStore(store)
+  return getShoppingPurchased(dateKeys)
 }
 
 // Run migrations when the storage module loads.
