@@ -1,7 +1,7 @@
 const NAV_ITEMS = [
   {
     id: 'today',
-    label: 'היום',
+    label: 'תכנון',
     icon: (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <rect x="5" y="3" width="14" height="18" rx="2" />
@@ -27,6 +27,18 @@ const NAV_ITEMS = [
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M6 8h12l-1 12H7L6 8z" />
         <path d="M9 8V7a3 3 0 0 1 6 0v1" />
+      </svg>
+    ),
+  },
+  {
+    id: 'shopping',
+    label: 'קניות',
+    icon: (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 7h15l-1.5 9h-12z" />
+        <path d="M6 7l-1-3H2" />
+        <circle cx="9" cy="19" r="1.5" />
+        <circle cx="17" cy="19" r="1.5" />
       </svg>
     ),
   },

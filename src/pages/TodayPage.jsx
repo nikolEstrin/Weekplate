@@ -2,6 +2,8 @@ import { useRef, useState } from 'react'
 import {
   addMealToDayPlan,
   addProductToDayPlan,
+  copyDayPlan,
+  defaultQuantityForUnit,
   flattenDayPlan,
   getDayPlan,
   getGoals,
@@ -10,9 +12,11 @@ import {
   getProducts,
   getRecommendedSlots,
   GRAMS_UNIT,
+  isDayPlanEmpty,
   quantityToGrams,
   removePlannerItem,
   SLOT_IDS,
+  summarizeDayPlan,
   tagToRecommendedSlot,
   updatePlannerItemQuantity,
   updatePlannerMealMultiplier,
@@ -129,6 +133,16 @@ function getWeekDayKeys(weekStartKey) {
   )
 }
 
+function formatDateLabel(dateKey) {
+  const date = parseDateKey(dateKey)
+  return date.toLocaleDateString('he-IL', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
+}
+
 function mealTags(meal) {
   if (Array.isArray(meal.tags) && meal.tags.length > 0) {
     return meal.tags
@@ -202,6 +216,30 @@ function getProductUnits(product) {
 function resolveUnit(product, unitId) {
   const units = getProductUnits(product)
   return units.find((unit) => unit.id === unitId) || GRAMS_UNIT
+}
+
+/**
+ * Select the full quantity so the next keypress replaces it.
+ * Defer past click caret placement; text inputs support selection reliably.
+ */
+function selectQuantityOnFocus(event) {
+  const input = event.currentTarget
+  const selectAll = () => {
+    if (typeof input.select === 'function') {
+      input.select()
+    }
+  }
+  selectAll()
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(selectAll)
+  } else {
+    window.setTimeout(selectAll, 0)
+  }
+}
+
+/** Keep focus-select from being cleared by the mouseup that follows click. */
+function preserveQuantitySelectionOnMouseUp(event) {
+  event.preventDefault()
 }
 
 function formatMultiplier(value) {
@@ -402,6 +440,9 @@ function PlannerItemCard({
                           event.target.value,
                         )
                       }
+                      onFocus={selectQuantityOnFocus}
+                      onClick={selectQuantityOnFocus}
+                      onMouseUp={preserveQuantitySelectionOnMouseUp}
                       onBlur={(event) =>
                         onCommitQuantity(
                           item.id,
@@ -444,16 +485,15 @@ function PlannerItemCard({
   )
 }
 
-function TodayPage() {
+function TodayPage({ selectedDateKey, onSelectedDateChange }) {
   const todayKey = getLocalDateKey()
   const [goals] = useState(() => getGoals())
   const [products, setProducts] = useState(() => getProducts())
   const [meals] = useState(() => getMeals())
-  const [selectedDateKey, setSelectedDateKey] = useState(todayKey)
   const [weekStartKey, setWeekStartKey] = useState(() =>
-    getWeekStartKey(todayKey),
+    getWeekStartKey(selectedDateKey),
   )
-  const [dayPlan, setDayPlan] = useState(() => getDayPlan(todayKey))
+  const [dayPlan, setDayPlan] = useState(() => getDayPlan(selectedDateKey))
 
   const [view, setView] = useState('today')
   const [addTab, setAddTab] = useState('meals')
@@ -470,12 +510,17 @@ function TodayPage() {
   const [expandedMealIds, setExpandedMealIds] = useState(() => new Set())
   const [pendingAdd, setPendingAdd] = useState(null)
   const [preferredSlot, setPreferredSlot] = useState(null)
+  const [copyDestKey, setCopyDestKey] = useState('')
+  const [copyError, setCopyError] = useState('')
+  const [copyReplaceSummary, setCopyReplaceSummary] = useState([])
 
   const dateInputRef = useRef(null)
+  const copyDateInputRef = useRef(null)
   const productsById = new Map(products.map((product) => [product.id, product]))
   const isSelectedToday = selectedDateKey === todayKey
   const weekDayKeys = getWeekDayKeys(weekStartKey)
   const plannerItems = flattenDayPlan(dayPlan)
+  const sourcePlanEmpty = isDayPlanEmpty(dayPlan)
 
   function refreshPlan(dateKey = selectedDateKey) {
     setDayPlan(getDayPlan(dateKey))
@@ -486,7 +531,7 @@ function TodayPage() {
       typeof dateKey === 'string' && dateKey.trim() !== ''
         ? dateKey.trim()
         : todayKey
-    setSelectedDateKey(nextKey)
+    onSelectedDateChange(nextKey)
     setWeekStartKey(getWeekStartKey(nextKey))
     setDayPlan(getDayPlan(nextKey))
     setQuantityDrafts({})
@@ -503,6 +548,59 @@ function TodayPage() {
 
   function goToToday() {
     selectDate(todayKey)
+  }
+
+  function openCalendarPicker(inputRef = dateInputRef) {
+    const input = inputRef.current
+    if (!input) {
+      return
+    }
+    if (typeof input.showPicker === 'function') {
+      try {
+        input.showPicker()
+        return
+      } catch {
+        // Fall through to click for browsers that reject showPicker.
+      }
+    }
+    input.click()
+  }
+
+  function openCopyDay() {
+    setCopyDestKey('')
+    setCopyError('')
+    setCopyReplaceSummary([])
+    setView('copy')
+  }
+
+  function closeCopyDay() {
+    setView('today')
+    setCopyDestKey('')
+    setCopyError('')
+    setCopyReplaceSummary([])
+  }
+
+  function handleCopyDay(options = {}) {
+    const result = copyDayPlan(selectedDateKey, copyDestKey, options)
+
+    if (result.needsReplace) {
+      setCopyReplaceSummary(
+        Array.isArray(result.summary) ? result.summary : summarizeDayPlan(result.existing),
+      )
+      setCopyError('')
+      setView('copy-confirm')
+      return
+    }
+
+    if (!result.ok) {
+      setCopyError(
+        result.errors?.destination || 'לא ניתן להעתיק את היום',
+      )
+      return
+    }
+
+    selectDate(result.destinationDateKey || copyDestKey)
+    closeCopyDay()
   }
 
   function openAdd(slotHint = null) {
@@ -658,7 +756,11 @@ function TodayPage() {
     if (draft !== undefined) {
       return draft
     }
-    return '100'
+    const unit = resolveUnit(
+      productsById.get(productId),
+      getProductUnitId(productId),
+    )
+    return defaultQuantityForUnit(unit)
   }
 
   function getProductUnitId(productId) {
@@ -682,7 +784,13 @@ function TodayPage() {
   }
 
   function handleProductUnitChange(productId, unitId) {
+    const product = productsById.get(productId)
+    const unit = resolveUnit(product, unitId)
     setProductUnits((current) => ({ ...current, [productId]: unitId }))
+    setProductQuantities((current) => ({
+      ...current,
+      [productId]: defaultQuantityForUnit(unit),
+    }))
     setProductErrors((current) => {
       if (!current[productId]) {
         return current
@@ -915,6 +1023,8 @@ function TodayPage() {
   )
   const current = calculatePlannerNutrition(displayPlanner, products)
   const remaining = remainingNutrition(current, goals)
+  const caloriesOverTarget = current.calories > goals.calories
+  const caloriesOverBy = current.calories - goals.calories
 
   const normalizedMealQuery = mealQuery.trim().toLowerCase()
   const visibleMeals = meals.filter((meal) => {
@@ -1009,6 +1119,147 @@ function TodayPage() {
             )
           })}
         </ul>
+      </section>
+    )
+  }
+
+  if (view === 'copy-confirm') {
+    return (
+      <section className="page">
+        <header className="product-form__header">
+          <button
+            type="button"
+            className="product-form__close"
+            onClick={() => {
+              setCopyReplaceSummary([])
+              setView('copy')
+            }}
+            aria-label="ביטול"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+          <h1>אישור החלפה</h1>
+          <span className="today-add__header-spacer" aria-hidden="true" />
+        </header>
+
+        <p className="copy-day__hint">
+          ב־{formatDateLabel(copyDestKey)} כבר יש תפריט. ההעתקה תחליף את הפריטים
+          הבאים:
+        </p>
+
+        <ul className="copy-day__replace-list" aria-label="פריטים שיוחלפו">
+          {copyReplaceSummary.map((row, index) => (
+            <li key={`${row.slot}-${row.name}-${index}`}>
+              <span className="copy-day__replace-slot">
+                {SLOT_LABELS[row.slot] || row.slot}
+              </span>
+              <span className="copy-day__replace-name">{row.name}</span>
+            </li>
+          ))}
+        </ul>
+
+        <div className="copy-day__actions">
+          <button
+            type="button"
+            className="copy-day__cancel"
+            onClick={() => {
+              setCopyReplaceSummary([])
+              setView('copy')
+            }}
+          >
+            ביטול
+          </button>
+          <button
+            type="button"
+            className="copy-day__confirm"
+            onClick={() => handleCopyDay({ replaceExplicitly: true })}
+          >
+            החלף והעתק
+          </button>
+        </div>
+      </section>
+    )
+  }
+
+  if (view === 'copy') {
+    return (
+      <section className="page">
+        <header className="product-form__header">
+          <button
+            type="button"
+            className="product-form__close"
+            onClick={closeCopyDay}
+            aria-label="סגירה"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+          <h1>העתקת יום</h1>
+          <span className="today-add__header-spacer" aria-hidden="true" />
+        </header>
+
+        <p className="copy-day__hint">
+          העתקה מ־{formatDateLabel(selectedDateKey)} לתאריך יעד. הארוחות, החריצים,
+          הכמויות והשינויים יועתקו כתכנון עצמאי.
+        </p>
+
+        {sourcePlanEmpty ? (
+          <p className="copy-day__empty-note">
+            יום המקור ריק — היעד יישאר / יהפוך לריק.
+          </p>
+        ) : null}
+
+        <label className="copy-day__field">
+          <span className="copy-day__label">תאריך יעד</span>
+          <div className="copy-day__date-row">
+            <button
+              type="button"
+              className="week-selector__calendar-btn"
+              onClick={() => openCalendarPicker(copyDateInputRef)}
+              aria-label="בחירת תאריך יעד"
+            >
+              {copyDestKey ? formatDateLabel(copyDestKey) : 'בחירת תאריך'}
+            </button>
+            <input
+              ref={copyDateInputRef}
+              type="date"
+              className="week-selector__date-input"
+              value={copyDestKey}
+              onChange={(event) => {
+                setCopyDestKey(event.target.value || '')
+                setCopyError('')
+              }}
+              aria-label="תאריך יעד"
+            />
+          </div>
+        </label>
+
+        {copyError ? (
+          <p className="product-field__error" role="alert">
+            {copyError}
+          </p>
+        ) : null}
+
+        <div className="copy-day__actions">
+          <button
+            type="button"
+            className="copy-day__cancel"
+            onClick={closeCopyDay}
+          >
+            ביטול
+          </button>
+          <button
+            type="button"
+            className="copy-day__confirm"
+            onClick={() => handleCopyDay()}
+            disabled={!copyDestKey}
+          >
+            העתק
+          </button>
+        </div>
       </section>
     )
   }
@@ -1127,7 +1378,7 @@ function TodayPage() {
             ) : (
               <ul className="today-pick-list">
                 {visibleMeals.map((meal) => {
-                  const nutrition = calculateMealNutrition(meal, products)
+                  const nutrition = calculateMealNutrition(meal, products, meals)
                   const tags = mealTags(meal)
 
                   return (
@@ -1232,6 +1483,9 @@ function TodayPage() {
                                   event.target.value,
                                 )
                               }
+                              onFocus={selectQuantityOnFocus}
+                              onClick={selectQuantityOnFocus}
+                              onMouseUp={preserveQuantitySelectionOnMouseUp}
                               aria-invalid={Boolean(error)}
                               aria-describedby={error ? errorId : undefined}
                             />
@@ -1298,20 +1552,29 @@ function TodayPage() {
     <section className="page">
       <header className="page-header page-header--today">
         <h1>
-          {isSelectedToday ? 'היום' : 'תפריט יומי'}
+          תכנון
           <span className="page-header__emoji" aria-hidden="true">
             🌞
           </span>
         </h1>
-        {!isSelectedToday ? (
+        <div className="page-header__actions">
+          {!isSelectedToday ? (
+            <button
+              type="button"
+              className="week-selector__today-btn"
+              onClick={goToToday}
+            >
+              היום
+            </button>
+          ) : null}
           <button
             type="button"
-            className="week-selector__today-btn"
-            onClick={goToToday}
+            className="week-selector__copy-btn"
+            onClick={openCopyDay}
           >
-            היום
+            העתקת יום
           </button>
-        ) : null}
+        </div>
       </header>
 
       <section className="week-selector" aria-label="בחירת תאריך">
@@ -1327,20 +1590,10 @@ function TodayPage() {
           <button
             type="button"
             className="week-selector__calendar-btn"
-            onClick={() => {
-              const input = dateInputRef.current
-              if (!input) {
-                return
-              }
-              if (typeof input.showPicker === 'function') {
-                input.showPicker()
-              } else {
-                input.click()
-              }
-            }}
+            onClick={() => openCalendarPicker()}
             aria-label="בחירת תאריך מלוח שנה"
           >
-            תאריך
+            {formatDateLabel(selectedDateKey)}
           </button>
           <input
             ref={dateInputRef}
@@ -1384,7 +1637,18 @@ function TodayPage() {
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                onClick={() => selectDate(dateKey)}
+                onClick={() => {
+                  if (isSelected) {
+                    openCalendarPicker()
+                    return
+                  }
+                  selectDate(dateKey)
+                }}
+                aria-label={
+                  isSelected
+                    ? `תאריך נבחר ${formatDateLabel(dateKey)}. פתיחת לוח שנה`
+                    : formatDateLabel(dateKey)
+                }
               >
                 <span className="week-selector__weekday">{weekday}</span>
                 <span className="week-selector__date num">{date.getDate()}</span>
@@ -1404,21 +1668,58 @@ function TodayPage() {
       </aside>
 
       <div className="nutrition-grid">
-        {NUTRITION_CARDS.map((card) => (
-          <article
-            key={card.key}
-            className={`nutrition-card nutrition-card--${card.accent}`}
-          >
-            <h2 className="nutrition-card__label">{card.label}</h2>
-            <p className="nutrition-card__values">
-              <Num>
-                {formatDisplay(current[card.key])} /{' '}
-                {formatDisplay(goals[card.key])}
-              </Num>
-              <span className="nutrition-card__unit"> {card.unit}</span>
-            </p>
-          </article>
-        ))}
+        {NUTRITION_CARDS.map((card) => {
+          const isCaloriesOver =
+            card.key === 'calories' && caloriesOverTarget
+
+          return (
+            <article
+              key={card.key}
+              className={[
+                'nutrition-card',
+                `nutrition-card--${card.accent}`,
+                isCaloriesOver ? 'nutrition-card--over' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              aria-describedby={
+                isCaloriesOver ? 'calories-over-warning' : undefined
+              }
+            >
+              <h2 className="nutrition-card__label">
+                {card.label}
+                {isCaloriesOver ? (
+                  <span className="nutrition-card__badge" aria-hidden="true">
+                    חריגה
+                  </span>
+                ) : null}
+              </h2>
+              <p className="nutrition-card__values">
+                <Num>
+                  {formatDisplay(current[card.key])} /{' '}
+                  {formatDisplay(goals[card.key])}
+                </Num>
+                <span className="nutrition-card__unit"> {card.unit}</span>
+              </p>
+              {isCaloriesOver ? (
+                <p
+                  id="calories-over-warning"
+                  className="nutrition-card__over"
+                  role="status"
+                >
+                  מתוכנן{' '}
+                  <Num>{formatDisplay(current.calories)}</Num>
+                  {' · יעד '}
+                  <Num>{formatDisplay(goals.calories)}</Num>
+                  {' · עודף '}
+                  <Num>{formatDisplay(caloriesOverBy)}</Num>
+                  {' '}
+                  {card.unit}
+                </p>
+              ) : null}
+            </article>
+          )
+        })}
       </div>
 
       <section
