@@ -15,6 +15,7 @@ import {
   defaultQuantityForUnit,
   quantityToGrams,
 } from '../utils/units.js'
+import starterProductsData from '../data/starterProducts.json' with { type: 'json' }
 
 const PRODUCTS_KEY = 'weekplate_products'
 const MEALS_KEY = 'weekplate_meals'
@@ -23,6 +24,7 @@ const PLANS_KEY = 'weekplate_plans'
 const TODAY_KEY = 'weekplate_today'
 const MIGRATIONS_KEY = 'weekplate_migrations'
 const SHOPPING_PURCHASED_KEY = 'weekplate_shopping_purchased'
+const DELETED_STARTER_PRODUCTS_KEY = 'weekplate_deleted_starter_products'
 
 export {
   GRAMS_UNIT,
@@ -61,6 +63,16 @@ const DEFAULT_GOALS = {
 
 const MIGRATION_MEALS_TAGS = 'meals_tags_v1'
 const MIGRATION_TODAY_TO_PLANS = 'today_to_plans_v1'
+
+const STARTER_PRODUCTS = Array.isArray(starterProductsData?.products)
+  ? starterProductsData.products
+  : []
+
+const STARTER_PRODUCT_IDS = new Set(
+  STARTER_PRODUCTS.map((product) =>
+    product && typeof product.id === 'string' ? product.id.trim() : '',
+  ).filter(Boolean),
+)
 
 function createId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -119,6 +131,118 @@ function hasMigrationFlag(flag) {
   return Boolean(readMigrations()[flag])
 }
 
+function normalizeProductNameKey(name) {
+  return typeof name === 'string' ? name.trim().toLowerCase() : ''
+}
+
+function readDeletedStarterProductIds() {
+  try {
+    const raw = localStorage.getItem(DELETED_STARTER_PRODUCTS_KEY)
+    if (raw == null || raw === '') {
+      return new Set()
+    }
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) {
+      return new Set()
+    }
+    const ids = new Set()
+    for (const entry of parsed) {
+      if (typeof entry === 'string' && entry.trim() !== '') {
+        ids.add(entry.trim())
+      }
+    }
+    return ids
+  } catch {
+    return new Set()
+  }
+}
+
+function writeDeletedStarterProductIds(ids) {
+  const list = []
+  for (const id of ids) {
+    if (typeof id === 'string' && id.trim() !== '') {
+      list.push(id.trim())
+    }
+  }
+  localStorage.setItem(DELETED_STARTER_PRODUCTS_KEY, JSON.stringify(list))
+}
+
+function markStarterProductDeleted(id) {
+  if (typeof id !== 'string' || id.trim() === '') {
+    return
+  }
+  const trimmed = id.trim()
+  if (!STARTER_PRODUCT_IDS.has(trimmed)) {
+    return
+  }
+  const deleted = readDeletedStarterProductIds()
+  if (deleted.has(trimmed)) {
+    return
+  }
+  deleted.add(trimmed)
+  writeDeletedStarterProductIds(deleted)
+}
+
+/**
+ * Merge bundled starter products into localStorage.
+ * - New users get all starters.
+ * - Existing users get only missing starters (by id).
+ * - Never overwrites an existing product (id or edited data).
+ * - Skips normalized-name collisions with user products.
+ * - Skips starter ids the user previously deleted.
+ * Idempotent: safe to call on every launch.
+ */
+export function ensureStarterProducts() {
+  if (STARTER_PRODUCTS.length === 0) {
+    return readStoredProducts()
+  }
+
+  const products = readStoredProducts()
+  const deletedIds = readDeletedStarterProductIds()
+  const existingIds = new Set(products.map((product) => product.id))
+  const existingNames = new Set(
+    products.map((product) => normalizeProductNameKey(product.name)),
+  )
+
+  let added = false
+
+  for (const rawStarter of STARTER_PRODUCTS) {
+    if (!rawStarter || typeof rawStarter !== 'object') {
+      continue
+    }
+
+    const id =
+      typeof rawStarter.id === 'string' ? rawStarter.id.trim() : ''
+    if (!id || deletedIds.has(id) || existingIds.has(id)) {
+      continue
+    }
+
+    const result = validateProduct(rawStarter)
+    if (!result.ok) {
+      continue
+    }
+
+    const nameKey = normalizeProductNameKey(result.product.name)
+    if (!nameKey || existingNames.has(nameKey)) {
+      continue
+    }
+
+    products.push({
+      id,
+      ...result.product,
+    })
+    existingIds.add(id)
+    existingNames.add(nameKey)
+    added = true
+  }
+
+  if (added) {
+    saveProducts(products)
+  }
+
+  return products
+}
+
 /** Local calendar date as YYYY-MM-DD (not UTC). */
 export function getLocalDateKey(date = new Date()) {
   const source =
@@ -140,11 +264,31 @@ export function getLocalDateKey(date = new Date()) {
 
 export function getEmptyDayPlan() {
   return {
-    breakfast: null,
-    lunch: null,
-    dinner: null,
+    breakfast: [],
+    lunch: [],
+    dinner: [],
     snacks: [],
   }
+}
+
+/** Normalize a primary slot that may be a legacy single item or an array. */
+function normalizeSlotItemList(raw, seenIds) {
+  const items = []
+  const sources = Array.isArray(raw) ? raw : raw != null ? [raw] : []
+
+  for (const entry of sources) {
+    const normalized = normalizePlannerItem(entry)
+    if (!normalized) {
+      continue
+    }
+    if (seenIds.has(normalized.id)) {
+      continue
+    }
+    seenIds.add(normalized.id)
+    items.push(normalized)
+  }
+
+  return items
 }
 
 /** Map a meal tag to a planner slot. dessert -> snack; others map to self when valid. */
@@ -438,6 +582,7 @@ export function deleteProduct(id) {
     return false
   }
 
+  markStarterProductDeleted(id)
   saveProducts(next)
 
   // Read raw meals before re-validation so we can strip the deleted product
@@ -1521,40 +1666,18 @@ function normalizePlannerItem(item) {
 }
 
 function normalizeDayPlan(plan) {
-  const empty = getEmptyDayPlan()
   if (!plan || typeof plan !== 'object') {
-    return empty
+    return getEmptyDayPlan()
   }
 
   const next = getEmptyDayPlan()
-  for (const slot of PRIMARY_SLOTS) {
-    const item = normalizePlannerItem(plan[slot])
-    next[slot] = item
-  }
-
-  const rawSnacks = Array.isArray(plan.snacks) ? plan.snacks : []
-  const snacks = []
   const seenIds = new Set()
 
   for (const slot of PRIMARY_SLOTS) {
-    if (next[slot]) {
-      seenIds.add(next[slot].id)
-    }
+    next[slot] = normalizeSlotItemList(plan[slot], seenIds)
   }
 
-  for (const item of rawSnacks) {
-    const normalized = normalizePlannerItem(item)
-    if (!normalized) {
-      continue
-    }
-    if (seenIds.has(normalized.id)) {
-      continue
-    }
-    seenIds.add(normalized.id)
-    snacks.push(normalized)
-  }
-
-  next.snacks = snacks
+  next.snacks = normalizeSlotItemList(plan.snacks, seenIds)
   return next
 }
 
@@ -1564,8 +1687,8 @@ export function flattenDayPlan(plan) {
   const items = []
 
   for (const slot of PRIMARY_SLOTS) {
-    if (normalized[slot]) {
-      items.push(normalized[slot])
+    for (const item of normalized[slot]) {
+      items.push(item)
     }
   }
 
@@ -1646,8 +1769,8 @@ function assignLegacyItemToPlan(plan, item) {
   if (item.type === 'meal') {
     const tags = Array.isArray(item.tags) ? item.tags : []
     const primaryTag = tags.find((tag) => PRIMARY_SLOTS.includes(tag))
-    if (primaryTag && plan[primaryTag] == null) {
-      plan[primaryTag] = item
+    if (primaryTag) {
+      plan[primaryTag].push(item)
       return
     }
   }
@@ -1731,9 +1854,9 @@ export function saveDayPlan(dateKey, plan) {
 export function isDayPlanEmpty(plan) {
   const normalized = normalizeDayPlan(plan)
   return (
-    normalized.breakfast == null &&
-    normalized.lunch == null &&
-    normalized.dinner == null &&
+    normalized.breakfast.length === 0 &&
+    normalized.lunch.length === 0 &&
+    normalized.dinner.length === 0 &&
     normalized.snacks.length === 0
   )
 }
@@ -1744,8 +1867,7 @@ export function summarizeDayPlan(plan) {
   const rows = []
 
   for (const slot of PRIMARY_SLOTS) {
-    const item = normalized[slot]
-    if (item) {
+    for (const item of normalized[slot]) {
       rows.push({ slot, name: item.name })
     }
   }
@@ -1794,8 +1916,8 @@ export function cloneDayPlanIndependent(plan) {
 
   for (const slot of PRIMARY_SLOTS) {
     next[slot] = source[slot]
-      ? clonePlannerItemIndependent(source[slot])
-      : null
+      .map((item) => clonePlannerItemIndependent(item))
+      .filter(Boolean)
   }
 
   next.snacks = source.snacks
@@ -2029,8 +2151,10 @@ export function createMealSnapshot(meal, products, meals) {
 
 /**
  * Creates a product planner snapshot (does not persist).
+ * Optional unit metadata (unitId / unitName / unitGrams) is frozen for UI;
+ * nutrition always uses quantityGrams.
  */
-export function createProductSnapshot(product, quantityGrams) {
+export function createProductSnapshot(product, quantityGrams, options = {}) {
   const source = product && typeof product === 'object' ? product : null
   if (!source || typeof source.id !== 'string' || source.id.trim() === '') {
     return { ok: false, errors: { product: 'המוצר לא נמצא' }, item: null }
@@ -2050,10 +2174,19 @@ export function createProductSnapshot(product, quantityGrams) {
     }
   }
 
-  const ingredient = snapshotIngredient(
-    { productId: source.id, quantityGrams: quantity },
-    [source],
-  )
+  const unitSource =
+    options && typeof options === 'object' && options.unit && typeof options.unit === 'object'
+      ? options.unit
+      : options && typeof options === 'object'
+        ? options
+        : null
+
+  const ingredientInput = { productId: source.id, quantityGrams: quantity }
+  if (unitSource) {
+    attachUnitMetadata(ingredientInput, unitSource)
+  }
+
+  const ingredient = snapshotIngredient(ingredientInput, [source])
 
   if (!ingredient) {
     return {
@@ -2073,39 +2206,28 @@ export function createProductSnapshot(product, quantityGrams) {
   return { ok: true, errors: {}, item }
 }
 
-export function setSlotItem(dateKey, slot, item) {
+function getSlotList(plan, slotId) {
+  if (slotId === 'snack') {
+    return plan.snacks
+  }
+  return plan[slotId]
+}
+
+/** Append a planner item to a slot list (breakfast/lunch/dinner/snack). */
+export function appendSlotItem(dateKey, slot, item) {
   ensureMigrations()
   const key = ensureDayExists(dateKey)
   const slotId = normalizeSlotId(slot)
 
-  if (!PRIMARY_SLOTS.includes(slotId)) {
+  if (!slotId) {
     return {
       ok: false,
-      errors: { slot: 'חריץ לא תקין' },
+      errors: { slot: 'קטגוריה לא תקינה' },
       plan: getDayPlan(key),
     }
   }
 
-  const normalizedItem = item == null ? null : normalizePlannerItem(item)
-  if (item != null && !normalizedItem) {
-    return {
-      ok: false,
-      errors: { item: 'פריט לא תקין' },
-      plan: getDayPlan(key),
-    }
-  }
-
-  const plan = getDayPlan(key)
-  plan[slotId] = normalizedItem
-  const saved = saveDayPlan(key, plan)
-  return { ok: true, errors: {}, plan: saved, item: normalizedItem }
-}
-
-export function addSnack(dateKey, item) {
-  ensureMigrations()
-  const key = ensureDayExists(dateKey)
   const normalizedItem = normalizePlannerItem(item)
-
   if (!normalizedItem) {
     return {
       ok: false,
@@ -2124,9 +2246,45 @@ export function addSnack(dateKey, item) {
     }
   }
 
-  plan.snacks.push(normalizedItem)
+  getSlotList(plan, slotId).push(normalizedItem)
   const saved = saveDayPlan(key, plan)
   return { ok: true, errors: {}, plan: saved, item: normalizedItem }
+}
+
+/**
+ * Replace the entire contents of a primary slot with a single item (or clear).
+ * Prefer appendSlotItem for normal adds.
+ */
+export function setSlotItem(dateKey, slot, item) {
+  ensureMigrations()
+  const key = ensureDayExists(dateKey)
+  const slotId = normalizeSlotId(slot)
+
+  if (!PRIMARY_SLOTS.includes(slotId)) {
+    return {
+      ok: false,
+      errors: { slot: 'קטגוריה לא תקינה' },
+      plan: getDayPlan(key),
+    }
+  }
+
+  const normalizedItem = item == null ? null : normalizePlannerItem(item)
+  if (item != null && !normalizedItem) {
+    return {
+      ok: false,
+      errors: { item: 'פריט לא תקין' },
+      plan: getDayPlan(key),
+    }
+  }
+
+  const plan = getDayPlan(key)
+  plan[slotId] = normalizedItem ? [normalizedItem] : []
+  const saved = saveDayPlan(key, plan)
+  return { ok: true, errors: {}, plan: saved, item: normalizedItem }
+}
+
+export function addSnack(dateKey, item) {
+  return appendSlotItem(dateKey, 'snack', item)
 }
 
 export function replaceSlotItem(dateKey, slot, item) {
@@ -2135,8 +2293,8 @@ export function replaceSlotItem(dateKey, slot, item) {
 
 /**
  * Add a meal snapshot to a day plan slot.
- * Primary slots: one item only — returns needsReplace if occupied unless replaceExplicitly.
- * Snack slot: always appends.
+ * If the same saved meal (sourceMealId) is already in that slot,
+ * bump mealMultiplier by 1 instead of appending another row.
  */
 export function addMealToDayPlan(dateKey, meal, slot, products, options = {}) {
   ensureMigrations()
@@ -2144,9 +2302,33 @@ export function addMealToDayPlan(dateKey, meal, slot, products, options = {}) {
   if (!slotId) {
     return {
       ok: false,
-      errors: { slot: 'יש לבחור חריץ' },
+      errors: { slot: 'יש לבחור קטגוריה' },
       item: null,
       needsReplace: false,
+    }
+  }
+
+  const sourceMealId =
+    meal && typeof meal === 'object' && typeof meal.id === 'string'
+      ? meal.id.trim()
+      : ''
+
+  const key = ensureDayExists(dateKey)
+
+  if (sourceMealId) {
+    const plan = getDayPlan(key)
+    const existing = getSlotList(plan, slotId).find(
+      (item) =>
+        item &&
+        item.type === 'meal' &&
+        typeof item.sourceMealId === 'string' &&
+        item.sourceMealId === sourceMealId,
+    )
+
+    if (existing) {
+      const nextMultiplier = parseMealMultiplier(existing.mealMultiplier) + 1
+      const updated = updatePlannerMealMultiplier(key, existing.id, nextMultiplier)
+      return { ...updated, needsReplace: false }
     }
   }
 
@@ -2155,35 +2337,7 @@ export function addMealToDayPlan(dateKey, meal, slot, products, options = {}) {
     return { ...snapshot, needsReplace: false }
   }
 
-  const key = ensureDayExists(dateKey)
-  const plan = getDayPlan(key)
-  const replaceExplicitly = Boolean(options && options.replaceExplicitly)
-
-  if (slotId === 'snack') {
-    const result = addSnack(key, snapshot.item)
-    if (!result.ok) {
-      return {
-        ok: false,
-        errors: result.errors,
-        item: null,
-        needsReplace: false,
-      }
-    }
-    return { ok: true, errors: {}, item: result.item, needsReplace: false }
-  }
-
-  if (plan[slotId] != null && !replaceExplicitly) {
-    return {
-      ok: false,
-      errors: {},
-      item: null,
-      needsReplace: true,
-      existing: plan[slotId],
-      slot: slotId,
-    }
-  }
-
-  const result = setSlotItem(key, slotId, snapshot.item)
+  const result = appendSlotItem(key, slotId, snapshot.item)
   if (!result.ok) {
     return {
       ok: false,
@@ -2197,7 +2351,7 @@ export function addMealToDayPlan(dateKey, meal, slot, products, options = {}) {
 }
 
 /**
- * Add a product snapshot to a day plan slot (same occupancy rules as meals).
+ * Add a product snapshot to a day plan slot (same append rules as meals).
  */
 export function addProductToDayPlan(
   dateKey,
@@ -2211,46 +2365,19 @@ export function addProductToDayPlan(
   if (!slotId) {
     return {
       ok: false,
-      errors: { slot: 'יש לבחור חריץ' },
+      errors: { slot: 'יש לבחור קטגוריה' },
       item: null,
       needsReplace: false,
     }
   }
 
-  const snapshot = createProductSnapshot(product, quantityGrams)
+  const snapshot = createProductSnapshot(product, quantityGrams, options)
   if (!snapshot.ok) {
     return { ...snapshot, needsReplace: false }
   }
 
   const key = ensureDayExists(dateKey)
-  const plan = getDayPlan(key)
-  const replaceExplicitly = Boolean(options && options.replaceExplicitly)
-
-  if (slotId === 'snack') {
-    const result = addSnack(key, snapshot.item)
-    if (!result.ok) {
-      return {
-        ok: false,
-        errors: result.errors,
-        item: null,
-        needsReplace: false,
-      }
-    }
-    return { ok: true, errors: {}, item: result.item, needsReplace: false }
-  }
-
-  if (plan[slotId] != null && !replaceExplicitly) {
-    return {
-      ok: false,
-      errors: {},
-      item: null,
-      needsReplace: true,
-      existing: plan[slotId],
-      slot: slotId,
-    }
-  }
-
-  const result = setSlotItem(key, slotId, snapshot.item)
+  const result = appendSlotItem(key, slotId, snapshot.item)
   if (!result.ok) {
     return {
       ok: false,
@@ -2265,8 +2392,9 @@ export function addProductToDayPlan(
 
 function findPlannerItemLocation(plan, itemId) {
   for (const slot of PRIMARY_SLOTS) {
-    if (plan[slot] && plan[slot].id === itemId) {
-      return { kind: 'slot', slot }
+    const index = plan[slot].findIndex((item) => item.id === itemId)
+    if (index !== -1) {
+      return { kind: 'slot', slot, index }
     }
   }
 
@@ -2276,6 +2404,21 @@ function findPlannerItemLocation(plan, itemId) {
   }
 
   return null
+}
+
+function getItemAtLocation(plan, location) {
+  if (location.kind === 'slot') {
+    return plan[location.slot][location.index]
+  }
+  return plan.snacks[location.snackIndex]
+}
+
+function setItemAtLocation(plan, location, nextItem) {
+  if (location.kind === 'slot') {
+    plan[location.slot][location.index] = nextItem
+    return
+  }
+  plan.snacks[location.snackIndex] = nextItem
 }
 
 export function removePlannerItem(dateKey, itemId) {
@@ -2292,7 +2435,7 @@ export function removePlannerItem(dateKey, itemId) {
   }
 
   if (location.kind === 'slot') {
-    plan[location.slot] = null
+    plan[location.slot].splice(location.index, 1)
   } else {
     plan.snacks.splice(location.snackIndex, 1)
   }
@@ -2337,10 +2480,7 @@ export function updatePlannerItemQuantity(
     return { ok: false, errors: { id: 'הפריט לא נמצא' }, item: null }
   }
 
-  const item =
-    location.kind === 'slot'
-      ? plan[location.slot]
-      : plan.snacks[location.snackIndex]
+  const item = getItemAtLocation(plan, location)
 
   if (!item.ingredients[ingredientIndex]) {
     return {
@@ -2395,11 +2535,7 @@ export function updatePlannerItemQuantity(
     nextItem.baseIngredients = baseIngredients
   }
 
-  if (location.kind === 'slot') {
-    plan[location.slot] = nextItem
-  } else {
-    plan.snacks[location.snackIndex] = nextItem
-  }
+  setItemAtLocation(plan, location, nextItem)
 
   saveDayPlan(key, plan)
   return { ok: true, errors: {}, item: nextItem }
@@ -2433,10 +2569,7 @@ export function updatePlannerMealMultiplier(dateKey, itemId, multiplier) {
     return { ok: false, errors: { id: 'הפריט לא נמצא' }, item: null }
   }
 
-  const item =
-    location.kind === 'slot'
-      ? plan[location.slot]
-      : plan.snacks[location.snackIndex]
+  const item = getItemAtLocation(plan, location)
 
   if (!item || item.type !== 'meal') {
     return {
@@ -2469,11 +2602,7 @@ export function updatePlannerMealMultiplier(dateKey, itemId, multiplier) {
     ),
   }
 
-  if (location.kind === 'slot') {
-    plan[location.slot] = nextItem
-  } else {
-    plan.snacks[location.snackIndex] = nextItem
-  }
+  setItemAtLocation(plan, location, nextItem)
 
   saveDayPlan(key, plan)
   return { ok: true, errors: {}, item: nextItem }
@@ -2511,7 +2640,6 @@ export function saveTodayPlanner(items) {
 
 /**
  * Temporary shim: adds meal to today's recommended slot.
- * If primary slot is occupied, falls back to snacks (never silent replace).
  */
 export function addMealToToday(meal, products) {
   const dateKey = getLocalDateKey()
@@ -2519,16 +2647,7 @@ export function addMealToToday(meal, products) {
   const recommended = getRecommendedSlots(tags)
   const slot = recommended[0] || 'snack'
 
-  const result = addMealToDayPlan(dateKey, meal, slot, products)
-  if (result.ok) {
-    return result
-  }
-
-  if (result.needsReplace && slot !== 'snack') {
-    return addMealToDayPlan(dateKey, meal, 'snack', products)
-  }
-
-  return result
+  return addMealToDayPlan(dateKey, meal, slot, products)
 }
 
 /** Temporary shim: adds product to today's snacks. */
@@ -2656,5 +2775,6 @@ export function setShoppingItemPurchased(dateKeys, itemId, purchased) {
   return getShoppingPurchased(dateKeys)
 }
 
-// Run migrations when the storage module loads.
+// Run migrations + starter catalog when the storage module loads.
 ensureMigrations()
+ensureStarterProducts()

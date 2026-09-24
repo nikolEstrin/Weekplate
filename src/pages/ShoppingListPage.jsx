@@ -8,6 +8,7 @@ import {
 import { roundForDisplay } from '../utils/nutrition.js'
 import {
   STANDARD_SLOT_LABELS,
+  formatShoppingListAsText,
   shoppingSelectionKey,
 } from '../utils/shoppingList.js'
 
@@ -71,6 +72,7 @@ function ShoppingListPage() {
   const [selectedDates, setSelectedDates] = useState(() => new Set([todayKey]))
   const [list, setList] = useState(null)
   const [purchased, setPurchased] = useState({})
+  const [exportStatus, setExportStatus] = useState('')
 
   const weekDayKeys = useMemo(
     () => getWeekDayKeys(weekStartKey),
@@ -81,6 +83,9 @@ function ShoppingListPage() {
     () => Array.from(selectedDates).sort(),
     [selectedDates],
   )
+
+  const canShareText =
+    typeof navigator !== 'undefined' && typeof navigator.share === 'function'
 
   function shiftWeek(delta) {
     setWeekStartKey((current) =>
@@ -99,17 +104,20 @@ function ShoppingListPage() {
       return next
     })
     setList(null)
+    setExportStatus('')
   }
 
   function selectWholeWeek() {
     setSelectedDates(new Set(weekDayKeys))
     setList(null)
+    setExportStatus('')
   }
 
   function clearSelection() {
     setSelectedDates(new Set())
     setList(null)
     setPurchased({})
+    setExportStatus('')
   }
 
   function handleGenerate() {
@@ -119,6 +127,7 @@ function ShoppingListPage() {
     const result = generateShoppingList(selectedList)
     setList(result)
     setPurchased(getShoppingPurchased(result.dateKeys))
+    setExportStatus('')
   }
 
   function handleTogglePurchased(itemId) {
@@ -128,6 +137,54 @@ function ShoppingListPage() {
     const nextValue = !purchased[itemId]
     const next = setShoppingItemPurchased(list.dateKeys, itemId, nextValue)
     setPurchased(next)
+  }
+
+  function getExportText() {
+    if (!list || list.items.length === 0) {
+      return ''
+    }
+    return formatShoppingListAsText(list.items)
+  }
+
+  async function handleCopyAsText() {
+    const text = getExportText()
+    if (!text) {
+      return
+    }
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        await navigator.clipboard.writeText(text)
+      } else {
+        const area = document.createElement('textarea')
+        area.value = text
+        area.setAttribute('readonly', '')
+        area.style.position = 'fixed'
+        area.style.insetInlineStart = '-9999px'
+        document.body.appendChild(area)
+        area.select()
+        document.execCommand('copy')
+        document.body.removeChild(area)
+      }
+      setExportStatus('הועתק! אפשר להדביק בוואטסאפ')
+    } catch {
+      setExportStatus('ההעתקה נכשלה')
+    }
+  }
+
+  async function handleShareAsText() {
+    const text = getExportText()
+    if (!text || !canShareText) {
+      return
+    }
+    try {
+      await navigator.share({ text, title: 'רשימת קניות' })
+      setExportStatus('שותף בהצלחה')
+    } catch (error) {
+      if (error && error.name === 'AbortError') {
+        return
+      }
+      setExportStatus('השיתוף נכשל')
+    }
   }
 
   const hasWarnings =
@@ -284,48 +341,75 @@ function ShoppingListPage() {
               <p>אין מוצרים לתאריכים שנבחרו.</p>
             </div>
           ) : (
-            <ul className="shopping-list" aria-label="פריטי קניות">
-              {list.items.map((item) => {
-                const isPurchased = Boolean(purchased[item.id])
-                return (
-                  <li key={item.id}>
-                    <label
-                      className={[
-                        'shopping-item',
-                        isPurchased ? 'shopping-item--purchased' : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
+            <>
+              <div className="shopping-export">
+                <div className="shopping-export__actions">
+                  <button
+                    type="button"
+                    className="btn-secondary"
+                    onClick={handleCopyAsText}
+                  >
+                    העתק כטקסט
+                  </button>
+                  {canShareText ? (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={handleShareAsText}
                     >
-                      <input
-                        type="checkbox"
-                        className="shopping-item__check"
-                        checked={isPurchased}
-                        onChange={() => handleTogglePurchased(item.id)}
-                      />
-                      <span className="shopping-item__body">
-                        <span className="shopping-item__name">
-                          {item.productName}
-                        </span>
-                        <span className="shopping-item__qty">
-                          <Num>{formatQuantity(item.quantity)}</Num>
-                          <span className="shopping-item__unit">
-                            {' '}
-                            {item.label}
+                      שתף
+                    </button>
+                  ) : null}
+                </div>
+                {exportStatus ? (
+                  <p className="shopping-export__status" role="status">
+                    {exportStatus}
+                  </p>
+                ) : null}
+              </div>
+              <ul className="shopping-list" aria-label="פריטי קניות">
+                {list.items.map((item) => {
+                  const isPurchased = Boolean(purchased[item.id])
+                  return (
+                    <li key={item.id}>
+                      <label
+                        className={[
+                          'shopping-item',
+                          isPurchased ? 'shopping-item--purchased' : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
+                      >
+                        <input
+                          type="checkbox"
+                          className="shopping-item__check"
+                          checked={isPurchased}
+                          onChange={() => handleTogglePurchased(item.id)}
+                        />
+                        <span className="shopping-item__body">
+                          <span className="shopping-item__name">
+                            {item.productName}
                           </span>
-                          {item.mergedFromDifferentUnits ? (
-                            <span className="shopping-item__hint">
+                          <span className="shopping-item__qty">
+                            <Num>{formatQuantity(item.quantity)}</Num>
+                            <span className="shopping-item__unit">
                               {' '}
-                              (אוחד מיחידות שונות)
+                              {item.label}
                             </span>
-                          ) : null}
+                            {item.mergedFromDifferentUnits ? (
+                              <span className="shopping-item__hint">
+                                {' '}
+                                (אוחד מיחידות שונות)
+                              </span>
+                            ) : null}
+                          </span>
                         </span>
-                      </span>
-                    </label>
-                  </li>
-                )
-              })}
-            </ul>
+                      </label>
+                    </li>
+                  )
+                })}
+              </ul>
+            </>
           )}
         </>
       ) : null}

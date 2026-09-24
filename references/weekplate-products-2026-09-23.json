@@ -1,0 +1,808 @@
+{
+  "version": 1,
+  "products": [
+    {
+      "id": "59e48cc0-8512-501f-a555-ee19f83b14a6",
+      "name": "אורז מבושל",
+      "caloriesPer100g": 125,
+      "proteinPer100g": 2.7,
+      "carbsPer100g": 28.1,
+      "fatPer100g": 0.2,
+      "units": [
+        {
+          "name": "כף",
+          "grams": 15
+        },
+        {
+          "name": "כוס",
+          "grams": 160
+        }
+      ]
+    },
+    {
+      "id": "39b173da-63cb-5e7d-b114-0ae3c768a2ef",
+      "name": "תפוח אדמה בתנור",
+      "caloriesPer100g": 93,
+      "proteinPer100g": 2.5,
+      "carbsPer100g": 21.15,
+      "fatPer100g": 0.13,
+      "units": [
+        {
+          "name": "יחידה בינונית",
+          "grams": 150
+        }
+      ]
+    },
+    {
+      "id": "6014a941-76b8-40a2-853b-8d425fb5147e",
+      "name": "חזה עוף צלוי",
+      "caloriesPer100g": 165,
+      "proteinPer100g": 31.02,
+      "carbsPer100g": 0,
+      "fatPer100g": 3.57,
+      "units": [
+        {
+          "name": "מנה",
+          "grams": 150
+        }
+      ]
+    },
+    {
+      "id": "686c0971-c5ef-54f4-b787-226520963493",
+      "name": "כוסמת מבושלת",
+      "caloriesPer100g": 92,
+      "proteinPer100g": 3.38,
+      "carbsPer100g": 19.94,
+      "fatPer100g": 0.62,
+      "units": [
+        {
+          "name": "כף",
+          "grams": 15
+        },
+        {
+          "name": "כוס",
+          "grams": 170
+        }
+      ]
+    },
+    {
+      "id": "6a929683-8c5b-5def-b6b5-dc47720db149",
+      "name": "טורטיה",
+      "caloriesPer100g": 222,
+      "proteinPer100g": 5.7,
+      "carbsPer100g": 46.6,
+      "fatPer100g": 2.5,
+      "units": [
+        {
+          "name": "יחידה בינונית",
+          "grams": 50
+        }
+      ]
+    },
+    {
+      "id": "b7774fd9-db01-5419-945e-498be56b0305",
+      "name": "דף אורז",
+      "caloriesPer100g": 348,
+      "proteinPer100g": 3.5,
+      "carbsPer100g": 83.1,
+      "fatPer100g": 0,
+      "units": [
+        {
+          "name": "יחידה",
+          "grams": 4
+        }
+      ]
+    },
+    {
+      "id": "58853f4f-ef45-5689-8a8b-173236d8a04d",
+      "name": "בטטה בתנור",
+      "caloriesPer100g": 90,
+      "proteinPer100g": 2.01,
+      "carbsPer100g": 20.71,
+      "fatPer100g": 0.15,
+      "units": [
+        {
+          "name": "יחידה בינונית",
+          "grams": 150
+        }
+      ]
+    },
+    {
+      "id": "4ed72a83-751f-5a9d-9229-ea2e8c97ffc1",
+      "name": "סלמון בתנור",
+      "caloriesPer100g": 206,
+      "proteinPer100g": 22.1,
+      "carbsPer100g": 0,
+      "fatPer100g": 12.35,
+      "units": [
+        {
+          "name": "מנה",
+          "grams": 150
+        }
+      ]
+    },
+    {
+      "id": "db381aa0-b0a8-5fdb-b8e3-f35236d2f52f",
+      "name": "אמנון בתנור",
+      "caloriesPer100g": 128,
+      "proteinPer100g": 26.15,
+      "carbsPer100g": 0,
+      "fatPer100g": 2.65,
+      "units": [
+        {
+          "name": "יחידה",
+          "grams": 150
+        }
+      ]
+    },
+    {
+      "id": "2b55a691-cafb-46b2-a763-d203ee476d69",
+      "name": "טונה בשמן",
+      "caloriesPer100g": 198,
+      "proteinPer100g": 29.13,
+      "carbsPer100g": 0,
+      "fatPer100g": 8.21,
+      "units": [
+        {
+          "name": "כף",
+          "grams": 20
+        },
+        {
+          "name": "קופסה",
+          "grams": 112
+        }
+      ]
+    },
+    {
+      "id": "91893b21-a0b0-50d6-bd7e-09129bbeaa2e",
+      "name": "בקר טחון",
+      "caloriesPer100g": 240,
+      "proteinPer100g": 25.93,
+      "carbsPer100g": 0,
+      "fatPer100g": 14.36,
+      "units": []
+    },
+    {
+      "id": "63562fa1-913b-5024-9775-9791f8391a4c",
+      "name": "סטייק אנטריקוט",
+      "caloriesPer100g": 265,
+      "proteinPer100g": 26.58,
+      "carbsPer100g": 0,
+      "fatPer100g": 16.76,
+      "units": [
+        {
+          "name": "יחידה",
+          "grams": 200
+        }
+      ]
+    },
+    {
+      "id": "e2c79040-c84c-55da-b294-e7e68defad97",
+      "name": "סינטה",
+      "caloriesPer100g": 212,
+      "proteinPer100g": 29.33,
+      "carbsPer100g": 0,
+      "fatPer100g": 9.67,
+      "units": [
+        {
+          "name": "יחידה",
+          "grams": 150
+        }
+      ]
+    },
+    {
+      "id": "e48ecfe1-84e5-57dc-8596-5d49d5d78421",
+      "name": "עדשים אדומות מבושלות",
+      "caloriesPer100g": 116,
+      "proteinPer100g": 9.02,
+      "carbsPer100g": 20.13,
+      "fatPer100g": 0.38,
+      "units": [
+        {
+          "name": "כף",
+          "grams": 15
+        },
+        {
+          "name": "כוס",
+          "grams": 200
+        }
+      ]
+    },
+    {
+      "id": "33609545-9ca9-545d-b2f4-ceeaf0cdd55e",
+      "name": "בורגול מבושל",
+      "caloriesPer100g": 83,
+      "proteinPer100g": 3.08,
+      "carbsPer100g": 18.58,
+      "fatPer100g": 0.24,
+      "units": [
+        {
+          "name": "כף",
+          "grams": 15
+        },
+        {
+          "name": "כוס",
+          "grams": 180
+        }
+      ]
+    },
+    {
+      "id": "d8f04379-81c5-5834-a8ee-2a707e989cc6",
+      "name": "ברוקולי מבושל",
+      "caloriesPer100g": 35,
+      "proteinPer100g": 2.38,
+      "carbsPer100g": 7.18,
+      "fatPer100g": 0.41,
+      "units": []
+    },
+    {
+      "id": "f982efbc-542a-504e-af76-0c01894efc8c",
+      "name": "אספרגוס",
+      "caloriesPer100g": 20,
+      "proteinPer100g": 2.2,
+      "carbsPer100g": 3.88,
+      "fatPer100g": 0.12,
+      "units": []
+    },
+    {
+      "id": "bd7f2b83-bf3b-5009-b24b-f91365cb01fa",
+      "name": "אצה",
+      "caloriesPer100g": 364,
+      "proteinPer100g": 49.2,
+      "carbsPer100g": 29.9,
+      "fatPer100g": 5.3,
+      "units": [
+        {
+          "name": "יחידה",
+          "grams": 2.5
+        }
+      ]
+    },
+    {
+      "id": "9683935d-3d68-436e-b5c2-bf651e950833",
+      "name": "מלפפון",
+      "caloriesPer100g": 15,
+      "proteinPer100g": 0.65,
+      "carbsPer100g": 3.63,
+      "fatPer100g": 0.11,
+      "units": [
+        {
+          "name": "יחידה בינונית",
+          "grams": 150
+        }
+      ]
+    },
+    {
+      "id": "27e03b57-a3f7-48a0-95ab-a151be48cde7",
+      "name": "עגבניה",
+      "caloriesPer100g": 18,
+      "proteinPer100g": 0.887,
+      "carbsPer100g": 3.923,
+      "fatPer100g": 0.2,
+      "units": [
+        {
+          "name": "יחידה בינונית",
+          "grams": 150
+        }
+      ]
+    },
+    {
+      "id": "1024ed3b-4241-56c5-947f-5ad17d20a429",
+      "name": "בצל",
+      "caloriesPer100g": 40,
+      "proteinPer100g": 1.1,
+      "carbsPer100g": 9.34,
+      "fatPer100g": 0.1,
+      "units": [
+        {
+          "name": "יחידה בינונית",
+          "grams": 125
+        }
+      ]
+    },
+    {
+      "id": "767d072a-d0cd-4b0a-a0ca-7eb50110d6b7",
+      "name": "בצל ירוק",
+      "caloriesPer100g": 32,
+      "proteinPer100g": 1.83,
+      "carbsPer100g": 7.34,
+      "fatPer100g": 0.19,
+      "units": [
+        {
+          "name": "יחידה",
+          "grams": 15
+        }
+      ]
+    },
+    {
+      "id": "c47d9602-d899-5e7d-b8c2-ca24fa7b4c74",
+      "name": "פלפל אדום",
+      "caloriesPer100g": 31,
+      "proteinPer100g": 0.99,
+      "carbsPer100g": 6.03,
+      "fatPer100g": 0.3,
+      "units": [
+        {
+          "name": "יחידה בינונית",
+          "grams": 150
+        }
+      ]
+    },
+    {
+      "id": "19ee85d2-d9af-4094-a832-58cfab809ac3",
+      "name": "פלפל צהוב",
+      "caloriesPer100g": 27,
+      "proteinPer100g": 1,
+      "carbsPer100g": 6.32,
+      "fatPer100g": 0.21,
+      "units": [
+        {
+          "name": "יחידה בינונית",
+          "grams": 150
+        }
+      ]
+    },
+    {
+      "id": "7b489391-2af2-45c3-9808-00b9e095804a",
+      "name": "פיתה כוסמין 99 קלוריות ליחידה",
+      "caloriesPer100g": 198,
+      "proteinPer100g": 8.9,
+      "carbsPer100g": 39.8,
+      "fatPer100g": 1.6,
+      "units": [
+        {
+          "name": "יחידה",
+          "grams": 50
+        }
+      ]
+    },
+    {
+      "id": "a4981a76-b08e-5496-a0d6-0ad616637524",
+      "name": "לחם קל",
+      "caloriesPer100g": 177,
+      "proteinPer100g": 8.4,
+      "carbsPer100g": 33.2,
+      "fatPer100g": 1.2,
+      "units": [
+        {
+          "name": "פרוסה",
+          "grams": 25
+        }
+      ]
+    },
+    {
+      "id": "82d02395-8355-5056-bbc7-e0775e464a42",
+      "name": "מיונז לייט",
+      "caloriesPer100g": 382,
+      "proteinPer100g": 1,
+      "carbsPer100g": 8.2,
+      "fatPer100g": 38.2,
+      "units": [
+        {
+          "name": "כפית",
+          "grams": 5
+        },
+        {
+          "name": "כף",
+          "grams": 15
+        }
+      ]
+    },
+    {
+      "id": "9b553c2d-ced6-5be8-8827-8f5991adb5c2",
+      "name": "טחינה גולמית",
+      "caloriesPer100g": 687,
+      "proteinPer100g": 25.5,
+      "carbsPer100g": 10.7,
+      "fatPer100g": 60.1,
+      "units": [
+        {
+          "name": "כפית",
+          "grams": 5
+        },
+        {
+          "name": "כף",
+          "grams": 15
+        }
+      ]
+    },
+    {
+      "id": "fe74d637-b250-53fb-8c71-446c28e3792c",
+      "name": "גבינה צהובה 9%",
+      "caloriesPer100g": 202,
+      "proteinPer100g": 30,
+      "carbsPer100g": 0.2,
+      "fatPer100g": 9,
+      "units": [
+        {
+          "name": "פרוסה",
+          "grams": 20
+        }
+      ]
+    },
+    {
+      "id": "7223852c-0a71-52e4-b05c-89a1499d53f9",
+      "name": "גבינה צהובה 15%",
+      "caloriesPer100g": 251,
+      "proteinPer100g": 29,
+      "carbsPer100g": 0,
+      "fatPer100g": 15,
+      "units": [
+        {
+          "name": "פרוסה",
+          "grams": 20
+        }
+      ]
+    },
+    {
+      "id": "58e6e75b-bd84-54ca-8607-de8072f9f9fb",
+      "name": "רסק עגבניות",
+      "caloriesPer100g": 98,
+      "proteinPer100g": 3.4,
+      "carbsPer100g": 21.9,
+      "fatPer100g": 0.4,
+      "units": [
+        {
+          "name": "כפית",
+          "grams": 5
+        },
+        {
+          "name": "כף",
+          "grams": 15
+        }
+      ]
+    },
+    {
+      "id": "ef77d75e-97bd-5b6f-b99d-66fd006cae50",
+      "name": "תירס בשימורים",
+      "caloriesPer100g": 115,
+      "proteinPer100g": 3.5,
+      "carbsPer100g": 21,
+      "fatPer100g": 1,
+      "units": [
+        {
+          "name": "כף",
+          "grams": 15
+        }
+      ]
+    },
+    {
+      "id": "74dda3f9-677e-56d6-a04d-15571e2bbba0",
+      "name": "גבינה בולגרית מעודנת 5%",
+      "caloriesPer100g": 93,
+      "proteinPer100g": 10,
+      "carbsPer100g": 2,
+      "fatPer100g": 5,
+      "units": []
+    },
+    {
+      "id": "bec581b6-eb49-5006-ac96-62f3b22c65c9",
+      "name": "פולי סויה מבושלים",
+      "caloriesPer100g": 141,
+      "proteinPer100g": 12.4,
+      "carbsPer100g": 11,
+      "fatPer100g": 6.4,
+      "units": []
+    },
+    {
+      "id": "f7a7cf23-1396-55b4-9247-02019dc09e6a",
+      "name": "גזר",
+      "caloriesPer100g": 41,
+      "proteinPer100g": 0.93,
+      "carbsPer100g": 9.58,
+      "fatPer100g": 0.24,
+      "units": [
+        {
+          "name": "יחידה בינונית",
+          "grams": 70
+        }
+      ]
+    },
+    {
+      "id": "bab85d03-d524-577e-8c57-3f8f2a33bca9",
+      "name": "סרירצ׳ה",
+      "caloriesPer100g": 91,
+      "proteinPer100g": 0,
+      "carbsPer100g": 22,
+      "fatPer100g": 0,
+      "units": [
+        {
+          "name": "כפית",
+          "grams": 5
+        },
+        {
+          "name": "כף",
+          "grams": 15
+        }
+      ]
+    },
+    {
+      "id": "f06eb859-967e-511d-b5ef-7bd44ce7f185",
+      "name": "גבינה לבנה 5%",
+      "caloriesPer100g": 98,
+      "proteinPer100g": 9,
+      "carbsPer100g": 4.3,
+      "fatPer100g": 5,
+      "units": [
+        {
+          "name": "כף",
+          "grams": 20
+        },
+        {
+          "name": "גביע",
+          "grams": 250
+        }
+      ]
+    },
+    {
+      "id": "afd0768a-ffd1-5060-851a-bc86b4d856ad",
+      "name": "לאבנה",
+      "caloriesPer100g": 87,
+      "proteinPer100g": 8.5,
+      "carbsPer100g": 2,
+      "fatPer100g": 5,
+      "units": [
+        {
+          "name": "כף",
+          "grams": 20
+        }
+      ]
+    },
+    {
+      "id": "b71aca9a-fde9-5942-94aa-604bc1925b5d",
+      "name": "ביצה קשה",
+      "caloriesPer100g": 155,
+      "proteinPer100g": 12.58,
+      "carbsPer100g": 1.12,
+      "fatPer100g": 10.61,
+      "units": [
+        {
+          "name": "יחידה",
+          "grams": 50
+        }
+      ]
+    },
+    {
+      "id": "cd0e85ae-1496-578c-8f50-1b0354ff98a2",
+      "name": "ביצת עין",
+      "caloriesPer100g": 196,
+      "proteinPer100g": 13.6,
+      "carbsPer100g": 0.83,
+      "fatPer100g": 14.8,
+      "units": [
+        {
+          "name": "יחידה",
+          "grams": 50
+        }
+      ]
+    },
+    {
+      "id": "5215adc9-5a6c-4e0e-8ae8-465330961d24",
+      "name": "קוטג׳ 5%",
+      "caloriesPer100g": 95,
+      "proteinPer100g": 11,
+      "carbsPer100g": 1.5,
+      "fatPer100g": 5,
+      "units": [
+        {
+          "name": "כף",
+          "grams": 20
+        },
+        {
+          "name": "גביע",
+          "grams": 250
+        }
+      ]
+    },
+    {
+      "id": "72c91661-6c4f-59ed-8425-f5a4c05c8544",
+      "name": "עגבניית שרי",
+      "caloriesPer100g": 18,
+      "proteinPer100g": 0.88,
+      "carbsPer100g": 3.92,
+      "fatPer100g": 0.2,
+      "units": [
+        {
+          "name": "יחידה",
+          "grams": 15
+        }
+      ]
+    },
+    {
+      "id": "0333a5d9-383a-5a3a-89b4-72b7accc79fa",
+      "name": "3% חלב",
+      "caloriesPer100g": 60,
+      "proteinPer100g": 3.3,
+      "carbsPer100g": 4.95,
+      "fatPer100g": 3,
+      "units": [
+        {
+          "name": "כוס",
+          "grams": 240
+        }
+      ]
+    },
+    {
+      "id": "49e2bc38-7f25-4c98-b5d6-0d8e4e2d6452",
+      "name": "חלב שקדים ללא סוכר",
+      "caloriesPer100g": 13,
+      "proteinPer100g": 0,
+      "carbsPer100g": 0,
+      "fatPer100g": 1.1,
+      "units": [
+        {
+          "name": "כוס",
+          "grams": 240
+        }
+      ]
+    },
+    {
+      "id": "078e65ec-ff3b-5d43-82f6-831a310b42ea",
+      "name": "בננה",
+      "caloriesPer100g": 89,
+      "proteinPer100g": 1.09,
+      "carbsPer100g": 22.84,
+      "fatPer100g": 0.33,
+      "units": [
+        {
+          "name": "יחידה",
+          "grams": 120
+        }
+      ]
+    },
+    {
+      "id": "90de2770-0a08-4af5-82be-2b59247e1bbe",
+      "name": "תמר",
+      "caloriesPer100g": 277,
+      "proteinPer100g": 1.81,
+      "carbsPer100g": 74.97,
+      "fatPer100g": 0.15,
+      "units": [
+        {
+          "name": "יחידה",
+          "grams": 20
+        }
+      ]
+    },
+    {
+      "id": "7c3b423b-0446-4cf3-9eaf-ddf5ac79df85",
+      "name": "שיבולת שועל להכנה מהירה",
+      "caloriesPer100g": 374,
+      "proteinPer100g": 11,
+      "carbsPer100g": 56,
+      "fatPer100g": 8,
+      "units": [
+        {
+          "name": "כף",
+          "grams": 10
+        },
+        {
+          "name": "כוס",
+          "grams": 80
+        }
+      ]
+    },
+    {
+      "id": "eec200ce-62ed-51ec-a694-d57b3108d460",
+      "name": "חמאת בוטנים",
+      "caloriesPer100g": 529,
+      "proteinPer100g": 18.3,
+      "carbsPer100g": 46.88,
+      "fatPer100g": 29.8,
+      "units": [
+        {
+          "name": "כפית",
+          "grams": 5
+        },
+        {
+          "name": "כף",
+          "grams": 15
+        }
+      ]
+    },
+    {
+      "id": "a72fdccb-9164-571d-9191-7f36b5b9697d",
+      "name": "צ׳יה",
+      "caloriesPer100g": 486,
+      "proteinPer100g": 16.5,
+      "carbsPer100g": 42.1,
+      "fatPer100g": 30.7,
+      "units": [
+        {
+          "name": "כפית",
+          "grams": 5
+        },
+        {
+          "name": "כף",
+          "grams": 12
+        }
+      ]
+    },
+    {
+      "id": "68a513c7-00b0-5887-b7ef-fd768ba7fce1",
+      "name": "קקאו",
+      "caloriesPer100g": 228,
+      "proteinPer100g": 19.6,
+      "carbsPer100g": 57.9,
+      "fatPer100g": 13.7,
+      "units": [
+        {
+          "name": "כפית",
+          "grams": 3
+        },
+        {
+          "name": "כף",
+          "grams": 8
+        }
+      ]
+    },
+    {
+      "id": "363b6dea-5b6e-50e5-934b-7c0dd63189ca",
+      "name": "יוגורט יווני 2%",
+      "caloriesPer100g": 71,
+      "proteinPer100g": 8.3,
+      "carbsPer100g": 4.9,
+      "fatPer100g": 2,
+      "units": [
+        {
+          "name": "גביע",
+          "grams": 150
+        },
+        {
+          "name": "כף",
+          "grams": 27.5
+        }
+      ]
+    },
+    {
+      "id": "f3e176e1-b2d0-5069-b31b-29bf883ec6e6",
+      "name": "יוגורט פרו 0% וניל",
+      "caloriesPer100g": 65,
+      "proteinPer100g": 10,
+      "carbsPer100g": 5.6,
+      "fatPer100g": 0,
+      "units": [
+        {
+          "name": "גביע",
+          "grams": 200
+        }
+      ]
+    },
+    {
+      "id": "08a19774-da31-5b2f-8b14-404b6b9fd3ae",
+      "name": "מייפל טבעי",
+      "caloriesPer100g": 270,
+      "proteinPer100g": 0,
+      "carbsPer100g": 67.09,
+      "fatPer100g": 0.2,
+      "units": [
+        {
+          "name": "כפית",
+          "grams": 7
+        },
+        {
+          "name": "כף",
+          "grams": 20
+        }
+      ]
+    },
+    {
+      "id": "ecf51af3-0b4c-5fdc-9d28-b11b500a848b",
+      "name": "קוסקוס",
+      "caloriesPer100g": 112,
+      "proteinPer100g": 3.79,
+      "carbsPer100g": 23.22,
+      "fatPer100g": 0.16,
+      "units": [
+        {
+          "name": "כף",
+          "grams": 15
+        },
+        {
+          "name": "כוס",
+          "grams": 160
+        }
+      ]
+    }
+  ]
+}

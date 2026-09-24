@@ -1,3 +1,4 @@
+import { roundForDisplay } from './nutrition.js'
 import { GRAMS_UNIT } from './units.js'
 
 /** Primary meal slots expected for a "fully planned" day (snacks optional). */
@@ -143,11 +144,19 @@ function isDayPlanEmptyLocal(plan) {
   }
   const snacks = Array.isArray(plan.snacks) ? plan.snacks : []
   return (
-    plan.breakfast == null &&
-    plan.lunch == null &&
-    plan.dinner == null &&
+    slotItemCount(plan.breakfast) === 0 &&
+    slotItemCount(plan.lunch) === 0 &&
+    slotItemCount(plan.dinner) === 0 &&
     snacks.length === 0
   )
+}
+
+/** Count items in a slot that may be a legacy single item or an array. */
+function slotItemCount(raw) {
+  if (Array.isArray(raw)) {
+    return raw.filter(Boolean).length
+  }
+  return raw != null ? 1 : 0
 }
 
 function flattenPlanItems(plan) {
@@ -156,8 +165,15 @@ function flattenPlanItems(plan) {
   }
   const items = []
   for (const slot of STANDARD_MEAL_SLOTS) {
-    if (plan[slot]) {
-      items.push(plan[slot])
+    const raw = plan[slot]
+    if (Array.isArray(raw)) {
+      for (const item of raw) {
+        if (item) {
+          items.push(item)
+        }
+      }
+    } else if (raw) {
+      items.push(raw)
     }
   }
   if (Array.isArray(plan.snacks)) {
@@ -234,7 +250,7 @@ export function analyzeShoppingCoverage(dateKeys, plansByDate) {
 
     const missing = []
     for (const slot of STANDARD_MEAL_SLOTS) {
-      if (!plan || plan[slot] == null) {
+      if (!plan || slotItemCount(plan[slot]) === 0) {
         missing.push(slot)
       }
     }
@@ -425,4 +441,52 @@ export function buildShoppingList(dateKeys, plansByDate, products) {
     items,
     warnings,
   }
+}
+
+function formatQuantityForText(value) {
+  const number = typeof value === 'number' ? value : Number(value)
+  if (!Number.isFinite(number)) {
+    return ''
+  }
+  const decimals = Math.abs(number - Math.round(number)) < 1e-9 ? 0 : 1
+  return String(roundForDisplay(number, decimals))
+}
+
+/**
+ * Plain-text shopping list for copy / WhatsApp share.
+ *
+ * @param {Array<{ productName?: string, quantity?: number, label?: string }>} items
+ * @param {{ title?: string }} [options]
+ * @returns {string}
+ */
+export function formatShoppingListAsText(items, options = {}) {
+  const list = Array.isArray(items) ? items : []
+  const title =
+    typeof options.title === 'string' && options.title.trim() !== ''
+      ? options.title.trim()
+      : 'רשימת קניות'
+
+  if (list.length === 0) {
+    return title
+  }
+
+  const lines = [title, '']
+  for (const item of list) {
+    if (!item || typeof item !== 'object') {
+      continue
+    }
+    const name =
+      typeof item.productName === 'string' && item.productName.trim() !== ''
+        ? item.productName.trim()
+        : 'מוצר'
+    const qty = formatQuantityForText(item.quantity)
+    const unit =
+      typeof item.label === 'string' && item.label.trim() !== ''
+        ? item.label.trim()
+        : ''
+    const amount = [qty, unit].filter(Boolean).join(' ')
+    lines.push(amount ? `• ${name} — ${amount}` : `• ${name}`)
+  }
+
+  return lines.join('\n')
 }

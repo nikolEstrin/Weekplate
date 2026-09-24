@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import {
   addMealToDayPlan,
   addProductToDayPlan,
@@ -219,6 +219,49 @@ function resolveUnit(product, unitId) {
 }
 
 /**
+ * Frozen unit metadata on a planner ingredient (UI only).
+ * Falls back to grams when missing or invalid.
+ */
+function displayUnitForIngredient(ingredient) {
+  const unitId =
+    typeof ingredient?.unitId === 'string' ? ingredient.unitId.trim() : ''
+  const unitGrams = Number(ingredient?.unitGrams)
+  const unitName =
+    typeof ingredient?.unitName === 'string' ? ingredient.unitName.trim() : ''
+
+  if (
+    unitId !== '' &&
+    unitId !== GRAMS_UNIT.id &&
+    Number.isFinite(unitGrams) &&
+    unitGrams > 0
+  ) {
+    return {
+      id: unitId,
+      name: unitName || unitId,
+      grams: unitGrams,
+    }
+  }
+
+  return GRAMS_UNIT
+}
+
+function formatQuantityInUnit(quantityGrams, unit) {
+  const grams = Number(quantityGrams)
+  if (!Number.isFinite(grams)) {
+    return ''
+  }
+  if (!unit || unit.id === GRAMS_UNIT.id) {
+    return String(grams)
+  }
+  const quantity = grams / unit.grams
+  if (!Number.isFinite(quantity)) {
+    return ''
+  }
+  const rounded = Math.round(quantity * 1000) / 1000
+  return String(rounded)
+}
+
+/**
  * Select the full quantity so the next keypress replaces it.
  * Defer past click caret placement; text inputs support selection reliably.
  */
@@ -292,16 +335,22 @@ function PlannerItemCard({
     if (Object.prototype.hasOwnProperty.call(quantityDrafts, key)) {
       return quantityDrafts[key]
     }
-    return String(item.ingredients[ingredientIndex].quantityGrams)
+    const ingredient = item.ingredients[ingredientIndex]
+    return formatQuantityInUnit(
+      ingredient.quantityGrams,
+      displayUnitForIngredient(ingredient),
+    )
   }
 
-  function getEffectiveQuantity(ingredientIndex) {
+  function getEffectiveQuantityGrams(ingredientIndex) {
+    const ingredient = item.ingredients[ingredientIndex]
+    const unit = displayUnitForIngredient(ingredient)
     const draft = getQuantityDraft(ingredientIndex)
     const parsed = Number(typeof draft === 'string' ? draft.trim() : draft)
     if (Number.isFinite(parsed) && parsed > 0) {
-      return parsed
+      return quantityToGrams(parsed, unit.grams)
     }
-    return item.ingredients[ingredientIndex].quantityGrams
+    return ingredient.quantityGrams
   }
 
   return (
@@ -405,6 +454,8 @@ function PlannerItemCard({
             const error = itemErrors[key]
             const inputId = `today-qty-${item.id}-${ingredientIndex}`
             const errorId = `${inputId}-error`
+            const unit = displayUnitForIngredient(ingredient)
+            const quantityGrams = getEffectiveQuantityGrams(ingredientIndex)
             const ingredientNutrition = calculateProductNutrition(
               productsById.get(ingredient.productId) || {
                 caloriesPer100g: ingredient.caloriesPer100g,
@@ -412,7 +463,7 @@ function PlannerItemCard({
                 carbsPer100g: ingredient.carbsPer100g,
                 fatPer100g: ingredient.fatPer100g,
               },
-              getEffectiveQuantity(ingredientIndex),
+              quantityGrams,
             )
 
             return (
@@ -423,7 +474,7 @@ function PlannerItemCard({
                   </span>
                   <div className="today-ingredient-row__qty">
                     <label className="visually-hidden" htmlFor={inputId}>
-                      כמות בגרם
+                      {`כמות ב${unit.name}`}
                     </label>
                     <input
                       id={inputId}
@@ -464,7 +515,9 @@ function PlannerItemCard({
                       aria-invalid={Boolean(error)}
                       aria-describedby={error ? errorId : undefined}
                     />
-                    <span className="today-ingredient-row__unit">גרם</span>
+                    <span className="today-ingredient-row__unit">
+                      {unit.name}
+                    </span>
                   </div>
                   <span className="today-ingredient-row__kcal">
                     <Num>{formatMacro(ingredientNutrition.calories)}</Num>
@@ -516,6 +569,70 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
 
   const dateInputRef = useRef(null)
   const copyDateInputRef = useRef(null)
+  const nutritionSentinelRef = useRef(null)
+  const nutritionGridRef = useRef(null)
+
+  useLayoutEffect(() => {
+    const sentinel = nutritionSentinelRef.current
+    const grid = nutritionGridRef.current
+    const root = sentinel?.closest('.app-content')
+    if (!sentinel || !grid || !root) {
+      return undefined
+    }
+
+    const cards = Array.from(grid.querySelectorAll('.nutrition-card'))
+    const shrinkRange = 180
+
+    cards.forEach((card) => {
+      card.style.width = ''
+      card.style.height = ''
+      card.style.insetInlineStart = ''
+      card.style.insetBlockStart = ''
+    })
+    grid.style.height = ''
+
+    function lerp(from, to, progress) {
+      return from + (to - from) * progress
+    }
+
+    function pinPoint() {
+      const rootTop = root.getBoundingClientRect().top
+      const sentinelTop = sentinel.getBoundingClientRect().top
+      return sentinelTop - rootTop + root.scrollTop
+    }
+
+    function update() {
+      const progress = Math.min(
+        1,
+        Math.max(0, (root.scrollTop - pinPoint()) / shrinkRange),
+      )
+      const compact = progress >= 0.72
+      const sizeProgress = Math.min(1, progress / 0.72)
+
+      grid.dataset.compact = compact ? 'true' : 'false'
+      grid.style.setProperty('--macro-p', String(progress))
+      grid.style.setProperty('--card-gap', `${lerp(12, 6, sizeProgress)}px`)
+      grid.style.setProperty('--card-label-size', `${lerp(0.8, 0.68, sizeProgress)}rem`)
+      grid.style.setProperty(
+        '--card-value-size',
+        `${lerp(1.05, 0.58, sizeProgress)}rem`,
+      )
+      grid.style.setProperty('--card-unit-size', `${lerp(0.8, 0.68, sizeProgress)}rem`)
+      grid.style.setProperty('--card-label-gap', `${lerp(8, 2, sizeProgress)}px`)
+      grid.style.setProperty('--card-radius', `${lerp(18, 14, sizeProgress)}px`)
+      grid.style.setProperty('--card-pad-y', `${lerp(12, 8, sizeProgress)}px`)
+      grid.style.setProperty('--card-pad-b', `${lerp(16, 8, sizeProgress)}px`)
+      grid.style.setProperty('--card-pad-x', `${lerp(12, 4, sizeProgress)}px`)
+    }
+
+    update()
+    root.addEventListener('scroll', update, { passive: true })
+    window.addEventListener('resize', update)
+    return () => {
+      root.removeEventListener('scroll', update)
+      window.removeEventListener('resize', update)
+    }
+  }, [])
   const productsById = new Map(products.map((product) => [product.id, product]))
   const isSelectedToday = selectedDateKey === todayKey
   const weekDayKeys = getWeekDayKeys(weekStartKey)
@@ -555,14 +672,17 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
     if (!input) {
       return
     }
+    // Prefer showPicker when available (desktop + modern mobile).
+    // Fall back to focus/click for browsers that reject programmatic open.
     if (typeof input.showPicker === 'function') {
       try {
         input.showPicker()
         return
       } catch {
-        // Fall through to click for browsers that reject showPicker.
+        // Fall through.
       }
     }
+    input.focus()
     input.click()
   }
 
@@ -650,46 +770,20 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
     })
   }
 
-  function confirmReplace(existing) {
-    const existingName =
-      existing && typeof existing.name === 'string' && existing.name.trim()
-        ? existing.name.trim()
-        : 'הפריט הקיים'
-    return window.confirm(
-      `החריץ תפוס (${existingName}). להחליף?`,
-    )
-  }
-
-  function applyAddResult(result, retryWithReplace) {
+  function applyAddResult(result) {
     if (result.ok) {
       refreshPlan()
       closeAdd()
       return
     }
 
-    if (result.needsReplace) {
-      if (!confirmReplace(result.existing)) {
-        return
-      }
-      retryWithReplace()
-      return
-    }
-
     return result
   }
 
-  function handleAddMealToSlot(meal, slot, options = {}) {
-    const result = addMealToDayPlan(
-      selectedDateKey,
-      meal,
-      slot,
-      products,
-      options,
-    )
-    const error = applyAddResult(result, () =>
-      handleAddMealToSlot(meal, slot, { replaceExplicitly: true }),
-    )
-    if (error && !error.ok && !error.needsReplace) {
+  function handleAddMealToSlot(meal, slot) {
+    const result = addMealToDayPlan(selectedDateKey, meal, slot, products)
+    const error = applyAddResult(result)
+    if (error && !error.ok) {
       window.alert(
         error.errors?.meal ||
           error.errors?.ingredients ||
@@ -700,28 +794,18 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
     }
   }
 
-  function handleAddProductToSlot(product, quantityValue, slot, options = {}) {
+  function handleAddProductToSlot(product, quantityGrams, slot, unitOptions = {}) {
     const result = addProductToDayPlan(
       selectedDateKey,
       product,
-      quantityValue,
+      quantityGrams,
       slot,
-      options,
+      unitOptions,
     )
 
     if (result.ok) {
       refreshPlan()
       closeAdd()
-      return
-    }
-
-    if (result.needsReplace) {
-      if (!confirmReplace(result.existing)) {
-        return
-      }
-      handleAddProductToSlot(product, quantityValue, slot, {
-        replaceExplicitly: true,
-      })
       return
     }
 
@@ -739,15 +823,15 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
   }
 
   function handlePickMeal(meal) {
-    const fromTags = getRecommendedSlots(mealTags(meal))
-    const recommendedSlots = preferredSlot
-      ? [preferredSlot, ...fromTags.filter((slot) => slot !== preferredSlot)]
-      : fromTags
+    if (preferredSlot) {
+      handleAddMealToSlot(meal, preferredSlot)
+      return
+    }
 
     openSlotPicker({
       kind: 'meal',
       meal,
-      recommendedSlots,
+      recommendedSlots: getRecommendedSlots(mealTags(meal)),
     })
   }
 
@@ -807,6 +891,18 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
     return quantityToGrams(quantityValue, unit.grams)
   }
 
+  function productUnitOptions(product) {
+    const unit = resolveUnit(product, getProductUnitId(product.id))
+    if (unit.id === GRAMS_UNIT.id) {
+      return {}
+    }
+    return {
+      unitId: unit.id,
+      unitName: unit.name,
+      unitGrams: unit.grams,
+    }
+  }
+
   function handlePickProduct(product) {
     const grams = resolveProductGrams(product)
     if (!Number.isFinite(grams) || grams <= 0) {
@@ -817,16 +913,22 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
       return
     }
 
+    const unitOptions = productUnitOptions(product)
+
+    if (preferredSlot) {
+      handleAddProductToSlot(product, grams, preferredSlot, unitOptions)
+      return
+    }
+
     openSlotPicker({
       kind: 'product',
       product,
       quantityValue: grams,
-      recommendedSlots: preferredSlot
-        ? [
-            preferredSlot,
-            ...SLOT_IDS.filter((slot) => slot !== preferredSlot),
-          ]
-        : ['snack', ...SLOT_IDS.filter((slot) => slot !== 'snack')],
+      unitOptions,
+      recommendedSlots: [
+        'snack',
+        ...SLOT_IDS.filter((slot) => slot !== 'snack'),
+      ],
     })
   }
 
@@ -844,6 +946,7 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
       pendingAdd.product,
       pendingAdd.quantityValue,
       slot,
+      pendingAdd.unitOptions || {},
     )
   }
 
@@ -852,15 +955,17 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
   }
 
   function getEffectiveQuantity(item, ingredientIndex) {
+    const ingredient = item.ingredients[ingredientIndex]
+    const unit = displayUnitForIngredient(ingredient)
     const key = draftKey(item.id, ingredientIndex)
     if (Object.prototype.hasOwnProperty.call(quantityDrafts, key)) {
       const draft = quantityDrafts[key]
       const parsed = Number(typeof draft === 'string' ? draft.trim() : draft)
       if (Number.isFinite(parsed) && parsed > 0) {
-        return parsed
+        return quantityToGrams(parsed, unit.grams)
       }
     }
-    return item.ingredients[ingredientIndex].quantityGrams
+    return ingredient.quantityGrams
   }
 
   function plannerWithDrafts(items) {
@@ -903,11 +1008,15 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
 
   function commitQuantity(itemId, ingredientIndex, rawValue) {
     const key = draftKey(itemId, ingredientIndex)
+    const item = plannerItems.find((entry) => entry.id === itemId)
+    const ingredient = item?.ingredients?.[ingredientIndex]
+    const unit = displayUnitForIngredient(ingredient)
+    const grams = quantityToGrams(rawValue, unit.grams)
     const result = updatePlannerItemQuantity(
       selectedDateKey,
       itemId,
       ingredientIndex,
-      rawValue,
+      grams,
     )
 
     if (!result.ok) {
@@ -1064,65 +1173,6 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
     recommendedSet = new Set([slotOptions[0]])
   }
 
-  if (view === 'slot' && pendingAdd) {
-    const pendingName =
-      pendingAdd.kind === 'meal'
-        ? pendingAdd.meal.name
-        : pendingAdd.product.name
-
-    return (
-      <section className="page">
-        <header className="product-form__header">
-          <button
-            type="button"
-            className="product-form__close"
-            onClick={() => {
-              setPendingAdd(null)
-              setView('add')
-            }}
-            aria-label="חזרה"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-          <h1>בחירת חריץ</h1>
-          <span className="today-add__header-spacer" aria-hidden="true" />
-        </header>
-
-        <p className="slot-picker__hint">
-          לאן להוסיף את <strong>{pendingName}</strong>?
-        </p>
-
-        <ul className="slot-picker-list">
-          {slotOptions.map((slot) => {
-            const isRecommended = recommendedSet.has(slot)
-            return (
-              <li key={slot}>
-                <button
-                  type="button"
-                  className={
-                    isRecommended
-                      ? 'slot-picker-option slot-picker-option--recommended'
-                      : 'slot-picker-option'
-                  }
-                  onClick={() => handleSelectSlot(slot)}
-                >
-                  <span className="slot-picker-option__label">
-                    {SLOT_LABELS[slot] || slot}
-                  </span>
-                  {isRecommended ? (
-                    <span className="slot-picker-option__badge">מומלץ</span>
-                  ) : null}
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      </section>
-    )
-  }
-
   if (view === 'copy-confirm') {
     return (
       <section className="page">
@@ -1215,25 +1265,22 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
         <label className="copy-day__field">
           <span className="copy-day__label">תאריך יעד</span>
           <div className="copy-day__date-row">
-            <button
-              type="button"
-              className="week-selector__calendar-btn"
-              onClick={() => openCalendarPicker(copyDateInputRef)}
-              aria-label="בחירת תאריך יעד"
-            >
-              {copyDestKey ? formatDateLabel(copyDestKey) : 'בחירת תאריך'}
-            </button>
-            <input
-              ref={copyDateInputRef}
-              type="date"
-              className="week-selector__date-input"
-              value={copyDestKey}
-              onChange={(event) => {
-                setCopyDestKey(event.target.value || '')
-                setCopyError('')
-              }}
-              aria-label="תאריך יעד"
-            />
+            <div className="week-selector__calendar-wrap">
+              <span className="week-selector__calendar-label" aria-hidden="true">
+                {copyDestKey ? formatDateLabel(copyDestKey) : 'בחירת תאריך'}
+              </span>
+              <input
+                ref={copyDateInputRef}
+                type="date"
+                className="week-selector__date-input"
+                value={copyDestKey}
+                onChange={(event) => {
+                  setCopyDestKey(event.target.value || '')
+                  setCopyError('')
+                }}
+                aria-label="בחירת תאריך יעד"
+              />
+            </div>
           </div>
         </label>
 
@@ -1264,9 +1311,69 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
     )
   }
 
-  if (view === 'add') {
-    return (
-      <section className="page">
+  const showAddSheet = view === 'add' || (view === 'slot' && Boolean(pendingAdd))
+
+  let addSheetBody = null
+  if (view === 'slot' && pendingAdd) {
+    const pendingName =
+      pendingAdd.kind === 'meal'
+        ? pendingAdd.meal.name
+        : pendingAdd.product.name
+
+    addSheetBody = (
+      <>
+        <header className="product-form__header">
+          <button
+            type="button"
+            className="product-form__close"
+            onClick={() => {
+              setPendingAdd(null)
+              setView('add')
+            }}
+            aria-label="חזרה"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+          </button>
+          <h1>בחירת קטגוריה</h1>
+          <span className="today-add__header-spacer" aria-hidden="true" />
+        </header>
+
+        <p className="slot-picker__hint">
+          לאן להוסיף את <strong>{pendingName}</strong>?
+        </p>
+
+        <ul className="slot-picker-list">
+          {slotOptions.map((slot) => {
+            const isRecommended = recommendedSet.has(slot)
+            return (
+              <li key={slot}>
+                <button
+                  type="button"
+                  className={
+                    isRecommended
+                      ? 'slot-picker-option slot-picker-option--recommended'
+                      : 'slot-picker-option'
+                  }
+                  onClick={() => handleSelectSlot(slot)}
+                >
+                  <span className="slot-picker-option__label">
+                    {SLOT_LABELS[slot] || slot}
+                  </span>
+                  {isRecommended ? (
+                    <span className="slot-picker-option__badge">מומלץ</span>
+                  ) : null}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </>
+    )
+  } else if (view === 'add') {
+    addSheetBody = (
+      <>
         <header className="product-form__header">
           <button
             type="button"
@@ -1544,7 +1651,7 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
             )}
           </>
         )}
-      </section>
+      </>
     )
   }
 
@@ -1587,26 +1694,23 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
           >
             ‹
           </button>
-          <button
-            type="button"
-            className="week-selector__calendar-btn"
-            onClick={() => openCalendarPicker()}
-            aria-label="בחירת תאריך מלוח שנה"
-          >
-            {formatDateLabel(selectedDateKey)}
-          </button>
-          <input
-            ref={dateInputRef}
-            type="date"
-            className="week-selector__date-input"
-            value={selectedDateKey}
-            onChange={(event) => {
-              if (event.target.value) {
-                selectDate(event.target.value)
-              }
-            }}
-            aria-label="תאריך"
-          />
+          <div className="week-selector__calendar-wrap">
+            <span className="week-selector__calendar-label" aria-hidden="true">
+              {formatDateLabel(selectedDateKey)}
+            </span>
+            <input
+              ref={dateInputRef}
+              type="date"
+              className="week-selector__date-input"
+              value={selectedDateKey}
+              onChange={(event) => {
+                if (event.target.value) {
+                  selectDate(event.target.value)
+                }
+              }}
+              aria-label="בחירת תאריך מלוח שנה"
+            />
+          </div>
           <button
             type="button"
             className="week-selector__nav"
@@ -1667,7 +1771,11 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
         </p>
       </aside>
 
-      <div className="nutrition-grid">
+      <div ref={nutritionSentinelRef} className="nutrition-grid-sentinel" />
+      <div
+        ref={nutritionGridRef}
+        className="nutrition-grid nutrition-grid--sticky"
+      >
         {NUTRITION_CARDS.map((card) => {
           const isCaloriesOver =
             card.key === 'calories' && caloriesOverTarget
@@ -1686,14 +1794,7 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
                 isCaloriesOver ? 'calories-over-warning' : undefined
               }
             >
-              <h2 className="nutrition-card__label">
-                {card.label}
-                {isCaloriesOver ? (
-                  <span className="nutrition-card__badge" aria-hidden="true">
-                    חריגה
-                  </span>
-                ) : null}
-              </h2>
+              <h2 className="nutrition-card__label">{card.label}</h2>
               <p className="nutrition-card__values">
                 <Num>
                   {formatDisplay(current[card.key])} /{' '}
@@ -1701,25 +1802,20 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
                 </Num>
                 <span className="nutrition-card__unit"> {card.unit}</span>
               </p>
-              {isCaloriesOver ? (
-                <p
-                  id="calories-over-warning"
-                  className="nutrition-card__over"
-                  role="status"
-                >
-                  מתוכנן{' '}
-                  <Num>{formatDisplay(current.calories)}</Num>
-                  {' · יעד '}
-                  <Num>{formatDisplay(goals.calories)}</Num>
-                  {' · עודף '}
-                  <Num>{formatDisplay(caloriesOverBy)}</Num>
-                  {' '}
-                  {card.unit}
-                </p>
-              ) : null}
             </article>
           )
         })}
+        {caloriesOverTarget ? (
+          <p
+            id="calories-over-warning"
+            className="nutrition-over-banner"
+            role="status"
+          >
+            חריגה בקלוריות · עודף{' '}
+            <Num>{formatDisplay(caloriesOverBy)}</Num>
+            {' קל׳'}
+          </p>
+        ) : null}
       </div>
 
       <section
@@ -1755,8 +1851,8 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
         {SLOT_SECTIONS.map((section) => {
           const items =
             section.kind === 'primary'
-              ? dayPlan[section.id]
-                ? [dayPlan[section.id]]
+              ? Array.isArray(dayPlan[section.id])
+                ? dayPlan[section.id]
                 : []
               : Array.isArray(dayPlan.snacks)
                 ? dayPlan.snacks
@@ -1820,6 +1916,32 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
           )
         })}
       </section>
+
+      {showAddSheet && addSheetBody ? (
+        <div className="today-sheet-root">
+          <button
+            type="button"
+            className="today-sheet-backdrop"
+            aria-label="סגירה"
+            onClick={closeAdd}
+          />
+          <div
+            className="today-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label={
+              view === 'slot'
+                ? 'בחירת קטגוריה'
+                : isSelectedToday
+                  ? 'הוספה להיום'
+                  : 'הוספה ליום'
+            }
+          >
+            <div className="today-sheet__handle" aria-hidden="true" />
+            <div className="today-sheet__body">{addSheetBody}</div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }

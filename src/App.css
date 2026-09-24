@@ -23,6 +23,7 @@
     calc(var(--nav-height) + var(--space-5) + var(--safe-bottom));
   overflow-y: auto;
   overflow-x: hidden;
+  overflow-anchor: none;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -116,6 +117,110 @@
   gap: var(--space-3);
 }
 
+.nutrition-grid-sentinel {
+  height: 1px;
+  margin-bottom: -1px;
+}
+
+.nutrition-grid--sticky {
+  position: sticky;
+  top: calc((var(--space-4) + var(--safe-top)) * -1);
+  z-index: 8;
+  margin-inline: calc(var(--space-4) * -1);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  background: var(--color-bg);
+  box-shadow:
+    0 calc((var(--space-4) + var(--safe-top)) * -1) 0 0 var(--color-bg),
+    0 var(--space-3) 0 0 var(--color-bg),
+    0 10px 16px -14px rgba(30, 42, 68, 0.45);
+}
+
+.nutrition-grid--sticky {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  justify-content: center;
+  align-items: stretch;
+  gap: var(--card-gap, var(--space-3));
+  height: auto;
+  overflow: hidden;
+}
+
+.nutrition-grid--sticky[data-compact='true'] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.nutrition-grid--sticky .nutrition-card {
+  position: relative;
+  inset: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: auto;
+  height: auto;
+  min-width: 0;
+  padding: var(--card-pad-y, var(--space-3)) var(--card-pad-x, var(--space-3))
+    var(--card-pad-b, var(--space-4));
+  border-radius: var(--card-radius, var(--radius-card));
+  text-align: center;
+}
+
+.nutrition-grid--sticky .nutrition-card__label {
+  justify-content: center;
+  width: 100%;
+  margin-bottom: var(--card-label-gap, var(--space-2));
+  font-size: var(--card-label-size, var(--font-size-sm));
+  text-align: center;
+}
+
+.nutrition-grid--sticky .nutrition-card__values {
+  width: 100%;
+  font-size: var(--card-value-size, 1.05rem);
+  line-height: 1.3;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.nutrition-grid--sticky .nutrition-card__unit {
+  font-size: var(--card-unit-size, var(--font-size-sm));
+}
+
+.nutrition-grid--sticky[data-compact='true'] .nutrition-card__unit {
+  display: none;
+}
+
+.nutrition-over-banner {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--color-danger-bg);
+  border: 1px solid var(--color-danger-border);
+  color: var(--color-danger);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  text-align: center;
+  line-height: 1.35;
+}
+
+.nutrition-grid--sticky[data-compact='true'] .nutrition-over-banner {
+  display: none;
+}
+
+.nutrition-card--over {
+  background: linear-gradient(160deg, var(--color-danger-bg) 0%, #ffffff 55%);
+  border-color: var(--color-danger-border);
+}
+
+.nutrition-card--over::before {
+  background: var(--color-danger);
+}
+
+.nutrition-card--over .nutrition-card__label,
+.nutrition-card--over .nutrition-card__values {
+  color: var(--color-danger);
+}
+
 .nutrition-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -182,48 +287,6 @@
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-medium);
   color: var(--color-text-muted);
-}
-
-.nutrition-card--over {
-  background: linear-gradient(160deg, var(--color-danger-bg) 0%, #ffffff 55%);
-  border-color: var(--color-danger-border);
-}
-
-.nutrition-card--over::before {
-  background: var(--color-danger);
-}
-
-.nutrition-card--over .nutrition-card__label {
-  color: var(--color-danger);
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-}
-
-.nutrition-card--over .nutrition-card__values {
-  color: var(--color-danger);
-}
-
-.nutrition-card__badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 22px;
-  padding: 0 8px;
-  border-radius: var(--radius-sm);
-  background: var(--color-danger);
-  color: #ffffff;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0.02em;
-}
-
-.nutrition-card__over {
-  margin: var(--space-2) 0 0;
-  font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-danger);
-  line-height: 1.4;
 }
 
 .remaining-card {
@@ -1423,6 +1486,78 @@
   min-height: 48px;
 }
 
+/* Add-meal bottom sheet — keeps Today nutrition visible above */
+.today-sheet-root {
+  position: fixed;
+  inset: 0;
+  left: 50%;
+  right: auto;
+  width: 100%;
+  max-width: var(--app-max-width);
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  pointer-events: none;
+}
+
+.today-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: rgba(30, 42, 68, 0.28);
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.today-sheet {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: min(78svh, calc(100% - 7.5rem));
+  background: var(--color-surface);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: 0 -8px 32px rgba(30, 42, 68, 0.14);
+  padding-bottom: calc(var(--space-4) + var(--safe-bottom));
+  overflow: hidden;
+}
+
+.today-sheet__handle {
+  flex-shrink: 0;
+  width: 40px;
+  height: 4px;
+  margin: var(--space-2) auto var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--color-border-strong);
+}
+
+.today-sheet__body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.today-sheet__body .product-form__header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-surface);
+  margin-inline: calc(var(--space-4) * -1);
+  padding-inline: var(--space-4);
+}
+
 .today-tabs {
   display: flex;
   gap: var(--space-2);
@@ -1811,7 +1946,7 @@
 }
 
 .week-selector__nav,
-.week-selector__calendar-btn,
+.week-selector__calendar-wrap,
 .week-selector__today-btn,
 .week-selector__copy-btn {
   min-height: 44px;
@@ -1834,12 +1969,28 @@
   color: var(--color-accent-strong);
 }
 
-.week-selector__calendar-btn {
+/* Transparent date input overlays the label so mobile taps hit the input
+   directly (programmatic showPicker/click often fails on phones). */
+.week-selector__calendar-wrap {
+  position: relative;
   flex: 1;
   max-width: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0;
+}
+
+.week-selector__calendar-label {
+  display: block;
+  width: 100%;
+  padding: 0 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: center;
+  pointer-events: none;
 }
 
 .week-selector__today-btn,
@@ -1860,10 +2011,16 @@
 
 .week-selector__date-input {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
   opacity: 0;
-  pointer-events: none;
+  cursor: pointer;
+  /* Keep tappable on iOS/Android; do not use pointer-events: none */
+  font-size: 1rem;
 }
 
 .week-selector__grid {
@@ -1952,7 +2109,7 @@
   align-items: center;
 }
 
-.copy-day__date-row .week-selector__calendar-btn {
+.copy-day__date-row .week-selector__calendar-wrap {
   max-width: none;
   width: 100%;
 }
@@ -2246,6 +2403,28 @@
   margin: 0;
   font-size: var(--font-size-xs);
   color: var(--color-text-soft);
+}
+
+.shopping-export {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.shopping-export__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.shopping-export__actions .btn-secondary {
+  flex: 1;
+}
+
+.shopping-export__status {
+  margin: 0;
+  text-align: center;
+  font-size: var(--font-size-sm);
+  color: var(--color-accent-strong);
 }
 
 .shopping-list {
