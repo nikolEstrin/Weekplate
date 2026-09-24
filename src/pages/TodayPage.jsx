@@ -1,10 +1,11 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import BalanceDaySheet from '../components/BalanceDaySheet.jsx'
+import CopyDaySheet from '../components/CopyDaySheet.jsx'
+import CopyWeekSheet from '../components/CopyWeekSheet.jsx'
 import MealSwapSheet from '../components/MealSwapSheet.jsx'
 import {
   addMealToDayPlan,
   addProductToDayPlan,
-  copyDayPlan,
   defaultQuantityForUnit,
   flattenDayPlan,
   getDayPlan,
@@ -13,13 +14,13 @@ import {
   getMeals,
   getProducts,
   getRecommendedSlots,
+  getWeekStartKey as getStorageWeekStartKey,
   GRAMS_UNIT,
-  isDayPlanEmpty,
   quantityToGrams,
   removePlannerItem,
   replacePlannerMealItem,
+  saveDayPlan,
   SLOT_IDS,
-  summarizeDayPlan,
   tagToRecommendedSlot,
   updatePlannerItemQuantity,
   updatePlannerMealMultiplier,
@@ -67,6 +68,7 @@ const SLOT_LABELS = {
   lunch: 'ארוחת צהריים',
   dinner: 'ארוחת ערב',
   snack: 'נשנוש',
+  snacks: 'נשנושים',
 }
 
 const SLOT_SECTIONS = [
@@ -131,9 +133,7 @@ function addDays(date, amount) {
 }
 
 function getWeekStartKey(dateKey) {
-  const date = parseDateKey(dateKey)
-  const weekStart = addDays(date, -date.getDay())
-  return getLocalDateKey(weekStart)
+  return getStorageWeekStartKey(dateKey)
 }
 
 function getWeekDayKeys(weekStartKey) {
@@ -585,16 +585,16 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
   const [expandedMealIds, setExpandedMealIds] = useState(() => new Set())
   const [pendingAdd, setPendingAdd] = useState(null)
   const [preferredSlot, setPreferredSlot] = useState(null)
-  const [copyDestKey, setCopyDestKey] = useState('')
-  const [copyError, setCopyError] = useState('')
-  const [copyReplaceSummary, setCopyReplaceSummary] = useState([])
+  const [copySourceKey, setCopySourceKey] = useState(null)
+  const [copyWeekOpen, setCopyWeekOpen] = useState(false)
+  const [copyToast, setCopyToast] = useState(null)
   const [swapItemId, setSwapItemId] = useState(null)
   const [balanceSheetOpen, setBalanceSheetOpen] = useState(false)
 
   const dateInputRef = useRef(null)
-  const copyDateInputRef = useRef(null)
   const nutritionSentinelRef = useRef(null)
   const nutritionGridRef = useRef(null)
+  const copyToastTimerRef = useRef(null)
 
   useLayoutEffect(() => {
     const sentinel = nutritionSentinelRef.current
@@ -661,10 +661,30 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
   const isSelectedToday = selectedDateKey === todayKey
   const weekDayKeys = getWeekDayKeys(weekStartKey)
   const plannerItems = flattenDayPlan(dayPlan)
-  const sourcePlanEmpty = isDayPlanEmpty(dayPlan)
 
   function refreshPlan(dateKey = selectedDateKey) {
     setDayPlan(getDayPlan(dateKey))
+  }
+
+  function clearCopyToastTimer() {
+    if (copyToastTimerRef.current != null) {
+      window.clearTimeout(copyToastTimerRef.current)
+      copyToastTimerRef.current = null
+    }
+  }
+
+  function dismissCopyToast() {
+    clearCopyToastTimer()
+    setCopyToast(null)
+  }
+
+  function showCopyToast(payload) {
+    clearCopyToastTimer()
+    setCopyToast(payload)
+    copyToastTimerRef.current = window.setTimeout(() => {
+      setCopyToast(null)
+      copyToastTimerRef.current = null
+    }, 6000)
   }
 
   function selectDate(dateKey) {
@@ -710,41 +730,51 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
     input.click()
   }
 
-  function openCopyDay() {
-    setCopyDestKey('')
-    setCopyError('')
-    setCopyReplaceSummary([])
-    setView('copy')
+  function openCopyDay(dateKey = selectedDateKey) {
+    const key =
+      typeof dateKey === 'string' && dateKey.trim() !== ''
+        ? dateKey.trim()
+        : selectedDateKey
+    if (key !== selectedDateKey) {
+      selectDate(key)
+    }
+    setCopySourceKey(key)
   }
 
   function closeCopyDay() {
-    setView('today')
-    setCopyDestKey('')
-    setCopyError('')
-    setCopyReplaceSummary([])
+    setCopySourceKey(null)
   }
 
-  function handleCopyDay(options = {}) {
-    const result = copyDayPlan(selectedDateKey, copyDestKey, options)
+  function openCopyWeek() {
+    setCopyWeekOpen(true)
+  }
 
-    if (result.needsReplace) {
-      setCopyReplaceSummary(
-        Array.isArray(result.summary) ? result.summary : summarizeDayPlan(result.existing),
-      )
-      setCopyError('')
-      setView('copy-confirm')
+  function closeCopyWeek() {
+    setCopyWeekOpen(false)
+  }
+
+  function handleCopySuccess({ previousPlans, destinationDateKeys }) {
+    refreshPlan()
+    showCopyToast({
+      message: 'הועתק בהצלחה',
+      previousPlans:
+        previousPlans && typeof previousPlans === 'object' ? previousPlans : {},
+      destinationDateKeys: Array.isArray(destinationDateKeys)
+        ? destinationDateKeys
+        : [],
+    })
+  }
+
+  function handleCopyUndo() {
+    if (!copyToast?.previousPlans) {
+      dismissCopyToast()
       return
     }
-
-    if (!result.ok) {
-      setCopyError(
-        result.errors?.destination || 'לא ניתן להעתיק את היום',
-      )
-      return
+    for (const [dateKey, plan] of Object.entries(copyToast.previousPlans)) {
+      saveDayPlan(dateKey, plan)
     }
-
-    selectDate(result.destinationDateKey || copyDestKey)
-    closeCopyDay()
+    refreshPlan()
+    dismissCopyToast()
   }
 
   function openAdd(slotHint = null) {
@@ -1402,144 +1432,6 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
     recommendedSet = new Set([slotOptions[0]])
   }
 
-  if (view === 'copy-confirm') {
-    return (
-      <section className="page">
-        <header className="product-form__header">
-          <button
-            type="button"
-            className="product-form__close"
-            onClick={() => {
-              setCopyReplaceSummary([])
-              setView('copy')
-            }}
-            aria-label="ביטול"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-          <h1>אישור החלפה</h1>
-          <span className="today-add__header-spacer" aria-hidden="true" />
-        </header>
-
-        <p className="copy-day__hint">
-          ב־{formatDateLabel(copyDestKey)} כבר יש תפריט. ההעתקה תחליף את הפריטים
-          הבאים:
-        </p>
-
-        <ul className="copy-day__replace-list" aria-label="פריטים שיוחלפו">
-          {copyReplaceSummary.map((row, index) => (
-            <li key={`${row.slot}-${row.name}-${index}`}>
-              <span className="copy-day__replace-slot">
-                {SLOT_LABELS[row.slot] || row.slot}
-              </span>
-              <span className="copy-day__replace-name">{row.name}</span>
-            </li>
-          ))}
-        </ul>
-
-        <div className="copy-day__actions">
-          <button
-            type="button"
-            className="copy-day__cancel"
-            onClick={() => {
-              setCopyReplaceSummary([])
-              setView('copy')
-            }}
-          >
-            ביטול
-          </button>
-          <button
-            type="button"
-            className="copy-day__confirm"
-            onClick={() => handleCopyDay({ replaceExplicitly: true })}
-          >
-            החלף והעתק
-          </button>
-        </div>
-      </section>
-    )
-  }
-
-  if (view === 'copy') {
-    return (
-      <section className="page">
-        <header className="product-form__header">
-          <button
-            type="button"
-            className="product-form__close"
-            onClick={closeCopyDay}
-            aria-label="סגירה"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M6 6l12 12M18 6L6 18" />
-            </svg>
-          </button>
-          <h1>העתקת יום</h1>
-          <span className="today-add__header-spacer" aria-hidden="true" />
-        </header>
-
-        <p className="copy-day__hint">
-          העתקה מ־{formatDateLabel(selectedDateKey)} לתאריך יעד. הארוחות, החריצים,
-          הכמויות והשינויים יועתקו כתכנון עצמאי.
-        </p>
-
-        {sourcePlanEmpty ? (
-          <p className="copy-day__empty-note">
-            יום המקור ריק — היעד יישאר / יהפוך לריק.
-          </p>
-        ) : null}
-
-        <label className="copy-day__field">
-          <span className="copy-day__label">תאריך יעד</span>
-          <div className="copy-day__date-row">
-            <div className="week-selector__calendar-wrap">
-              <span className="week-selector__calendar-label" aria-hidden="true">
-                {copyDestKey ? formatDateLabel(copyDestKey) : 'בחירת תאריך'}
-              </span>
-              <input
-                ref={copyDateInputRef}
-                type="date"
-                className="week-selector__date-input"
-                value={copyDestKey}
-                onChange={(event) => {
-                  setCopyDestKey(event.target.value || '')
-                  setCopyError('')
-                }}
-                aria-label="בחירת תאריך יעד"
-              />
-            </div>
-          </div>
-        </label>
-
-        {copyError ? (
-          <p className="product-field__error" role="alert">
-            {copyError}
-          </p>
-        ) : null}
-
-        <div className="copy-day__actions">
-          <button
-            type="button"
-            className="copy-day__cancel"
-            onClick={closeCopyDay}
-          >
-            ביטול
-          </button>
-          <button
-            type="button"
-            className="copy-day__confirm"
-            onClick={() => handleCopyDay()}
-            disabled={!copyDestKey}
-          >
-            העתק
-          </button>
-        </div>
-      </section>
-    )
-  }
-
   const showAddSheet = view === 'add' || (view === 'slot' && Boolean(pendingAdd))
 
   let addSheetBody = null
@@ -1906,9 +1798,28 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
           <button
             type="button"
             className="week-selector__copy-btn"
-            onClick={openCopyDay}
+            onClick={() => openCopyDay(selectedDateKey)}
+            aria-label={`העתקת יום ${formatDateLabel(selectedDateKey)}`}
+            title="העתקת יום"
           >
-            העתקת יום
+            <svg viewBox="0 0 24 24" aria-hidden="true" className="week-selector__copy-icon">
+              <path
+                d="M8 7h9a2 2 0 012 2v10a2 2 0 01-2 2H8a2 2 0 01-2-2V9a2 2 0 012-2zm3-3h7a2 2 0 012 2v1"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="week-selector__copy-btn week-selector__copy-btn--week"
+            onClick={openCopyWeek}
+            aria-label={`העתקת שבוע ${formatDateLabel(weekStartKey)}`}
+          >
+            העתק שבוע
           </button>
         </div>
       </header>
@@ -1958,34 +1869,60 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
             const isToday = dateKey === todayKey
 
             return (
-              <button
-                key={dateKey}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                className={[
-                  'week-selector__day',
-                  isSelected ? 'week-selector__day--selected' : '',
-                  isToday ? 'week-selector__day--today' : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                onClick={() => {
-                  if (isSelected) {
-                    openCalendarPicker()
-                    return
+              <div key={dateKey} className="week-selector__day-cell">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  className={[
+                    'week-selector__day',
+                    isSelected ? 'week-selector__day--selected' : '',
+                    isToday ? 'week-selector__day--today' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onClick={() => {
+                    if (isSelected) {
+                      openCalendarPicker()
+                      return
+                    }
+                    selectDate(dateKey)
+                  }}
+                  aria-label={
+                    isSelected
+                      ? `תאריך נבחר ${formatDateLabel(dateKey)}. פתיחת לוח שנה`
+                      : formatDateLabel(dateKey)
                   }
-                  selectDate(dateKey)
-                }}
-                aria-label={
-                  isSelected
-                    ? `תאריך נבחר ${formatDateLabel(dateKey)}. פתיחת לוח שנה`
-                    : formatDateLabel(dateKey)
-                }
-              >
-                <span className="week-selector__weekday">{weekday}</span>
-                <span className="week-selector__date num">{date.getDate()}</span>
-              </button>
+                >
+                  <span className="week-selector__weekday">{weekday}</span>
+                  <span className="week-selector__date num">{date.getDate()}</span>
+                </button>
+                <button
+                  type="button"
+                  className={[
+                    'week-selector__day-copy',
+                    isSelected ? 'week-selector__day-copy--selected' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    openCopyDay(dateKey)
+                  }}
+                  aria-label={`העתקת ${formatDateLabel(dateKey)}`}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M8 7h9a2 2 0 012 2v10a2 2 0 01-2 2H8a2 2 0 01-2-2V9a2 2 0 012-2zm3-3h7a2 2 0 012 2v1"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
             )
           })}
         </div>
@@ -2235,6 +2172,46 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
           onConfirm={handleConfirmSwap}
           onClose={handleCloseSwap}
         />
+      ) : null}
+
+      {copySourceKey ? (
+        <CopyDaySheet
+          sourceDateKey={copySourceKey}
+          onClose={closeCopyDay}
+          onSuccess={handleCopySuccess}
+        />
+      ) : null}
+
+      {copyWeekOpen ? (
+        <CopyWeekSheet
+          sourceWeekStartKey={weekStartKey}
+          onClose={closeCopyWeek}
+          onSuccess={handleCopySuccess}
+        />
+      ) : null}
+
+      {copyToast ? (
+        <div className="copy-toast" role="status" aria-live="polite">
+          <span className="copy-toast__check" aria-hidden="true">
+            ✓
+          </span>
+          <span className="copy-toast__message">{copyToast.message}</span>
+          <button
+            type="button"
+            className="copy-toast__undo"
+            onClick={handleCopyUndo}
+          >
+            בטל
+          </button>
+          <button
+            type="button"
+            className="copy-toast__close"
+            onClick={dismissCopyToast}
+            aria-label="סגירה"
+          >
+            ×
+          </button>
+        </div>
       ) : null}
     </section>
   )

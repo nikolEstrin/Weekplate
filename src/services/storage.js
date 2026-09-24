@@ -54,6 +54,32 @@ export const SLOT_IDS = ['breakfast', 'lunch', 'dinner', 'snack']
 
 const PRIMARY_SLOTS = ['breakfast', 'lunch', 'dinner']
 
+/** Day-plan array keys used by copy / selective slot selection. */
+export const DAY_PLAN_SLOT_KEYS = ['breakfast', 'lunch', 'dinner', 'snacks']
+
+/** Selective copy UI categories (desserts live in the snacks array, filtered by tag). */
+export const DAY_PLAN_COPY_CATEGORIES = [
+  'breakfast',
+  'lunch',
+  'dinner',
+  'snacks',
+  'desserts',
+]
+
+export const COPY_DAY_MODES = Object.freeze({
+  REPLACE: 'replace',
+  MERGE: 'merge',
+  SELECTIVE: 'selective',
+})
+
+/** Per-day conflict actions for copyWeekPlan. */
+export const COPY_WEEK_DAY_ACTIONS = Object.freeze({
+  REPLACE: 'replace',
+  MERGE: 'merge',
+  SKIP: 'skip',
+  SELECTIVE: 'selective',
+})
+
 const DEFAULT_ALLOWED_CALORIE_OVERAGE = 100
 const MIN_ALLOWED_CALORIE_OVERAGE = 0
 const MAX_ALLOWED_CALORIE_OVERAGE = 500
@@ -265,6 +291,52 @@ export function getLocalDateKey(date = new Date()) {
   const m = String(source.getMonth() + 1).padStart(2, '0')
   const d = String(source.getDate()).padStart(2, '0')
   return `${y}-${m}-${d}`
+}
+
+function parseLocalDateKey(dateKey) {
+  const parts = String(dateKey).split('-').map(Number)
+  if (parts.length !== 3 || parts.some((part) => !Number.isFinite(part))) {
+    return new Date()
+  }
+  const [year, month, day] = parts
+  return new Date(year, month - 1, day)
+}
+
+function addLocalDays(date, amount) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + amount)
+  return next
+}
+
+/** Sunday-start week key for a local date (YYYY-MM-DD). */
+export function getWeekStartKey(dateKey = getLocalDateKey()) {
+  const key =
+    typeof dateKey === 'string' && dateKey.trim() !== ''
+      ? dateKey.trim()
+      : getLocalDateKey()
+  const date = parseLocalDateKey(key)
+  return getLocalDateKey(addLocalDays(date, -date.getDay()))
+}
+
+/** Seven YYYY-MM-DD keys Sun→Sat for the week containing weekStartKey. */
+export function getWeekDayKeys(weekStartKey) {
+  const start = parseLocalDateKey(getWeekStartKey(weekStartKey))
+  return Array.from({ length: 7 }, (_, index) =>
+    getLocalDateKey(addLocalDays(start, index)),
+  )
+}
+
+/**
+ * Pair each source weekday with the same weekday in the destination week.
+ * Index 0 = Sunday … 6 = Saturday.
+ */
+export function buildWeekCopyPairs(sourceWeekStartKey, destinationWeekStartKey) {
+  const sourceKeys = getWeekDayKeys(sourceWeekStartKey)
+  const destKeys = getWeekDayKeys(destinationWeekStartKey)
+  return sourceKeys.map((sourceDateKey, index) => ({
+    sourceDateKey,
+    destinationDateKey: destKeys[index],
+  }))
 }
 
 export function getEmptyDayPlan() {
@@ -2000,71 +2072,561 @@ export function cloneDayPlanIndependent(plan) {
   return next
 }
 
+function clonePlannerItemList(items) {
+  if (!Array.isArray(items)) {
+    return []
+  }
+  return items.map((item) => clonePlannerItemIndependent(item)).filter(Boolean)
+}
+
 /**
- * Copy a day's plan onto another date as independent snapshots.
- * If the destination already has items and replaceExplicitly is not set,
- * returns needsReplace without writing.
+ * Map UI / API category names for selective copy.
+ * Desserts stay distinct from snacks for filtering the snacks array by tag.
  */
-export function copyDayPlan(sourceDateKey, destinationDateKey, options = {}) {
+export function normalizeDayPlanCopySlot(slot) {
+  if (typeof slot !== 'string') {
+    return null
+  }
+  const normalized = slot.trim().toLowerCase()
+  if (PRIMARY_SLOTS.includes(normalized)) {
+    return normalized
+  }
+  if (normalized === 'snacks' || normalized === 'snack') {
+    return 'snacks'
+  }
+  if (normalized === 'desserts' || normalized === 'dessert') {
+    return 'desserts'
+  }
+  return null
+}
+
+export function normalizeDayPlanCopySlots(slots) {
+  if (!Array.isArray(slots)) {
+    return []
+  }
+  const result = []
+  const seen = new Set()
+  for (const entry of slots) {
+    const slot = normalizeDayPlanCopySlot(entry)
+    if (!slot || seen.has(slot)) {
+      continue
+    }
+    seen.add(slot)
+    result.push(slot)
+  }
+  return result
+}
+
+function isDessertPlannerItem(item) {
+  if (!item || typeof item !== 'object') {
+    return false
+  }
+  if (Array.isArray(item.tags)) {
+    for (const tag of item.tags) {
+      if (normalizeMealTag(tag) === 'dessert') {
+        return true
+      }
+    }
+  }
+  return normalizeMealTag(item.tag) === 'dessert'
+}
+
+function partitionSnackItems(items) {
+  const snacks = []
+  const desserts = []
+  for (const item of Array.isArray(items) ? items : []) {
+    if (isDessertPlannerItem(item)) {
+      desserts.push(item)
+    } else {
+      snacks.push(item)
+    }
+  }
+  return { snacks, desserts }
+}
+
+function normalizeCopyDayMode(mode) {
+  if (typeof mode !== 'string') {
+    return null
+  }
+  const normalized = mode.trim().toLowerCase()
+  if (
+    normalized === COPY_DAY_MODES.REPLACE ||
+    normalized === COPY_DAY_MODES.MERGE ||
+    normalized === COPY_DAY_MODES.SELECTIVE
+  ) {
+    return normalized
+  }
+  return null
+}
+
+function normalizeDestinationDateKeys(destinationDateKeys) {
+  const raw = Array.isArray(destinationDateKeys)
+    ? destinationDateKeys
+    : destinationDateKeys == null
+      ? []
+      : [destinationDateKeys]
+
+  const keys = []
+  const seen = new Set()
+  for (const entry of raw) {
+    if (typeof entry !== 'string') {
+      continue
+    }
+    const key = entry.trim()
+    if (!key || seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    keys.push(key)
+  }
+  return keys
+}
+
+/**
+ * Pure day-plan copy algorithm (no persistence).
+ * Deep-clones source items so later edits never alias across days.
+ *
+ * modes:
+ * - replace: target becomes a full independent clone of source
+ * - merge: append independent clones of source items onto existing slots
+ * - selective: replace only the listed slots from source; keep other slots
+ */
+export function buildCopiedDayPlan(sourcePlan, existingPlan, options = {}) {
+  const source = normalizeDayPlan(sourcePlan)
+  const existing = normalizeDayPlan(existingPlan)
+  const mode = normalizeCopyDayMode(options.mode) || COPY_DAY_MODES.REPLACE
+
+  if (mode === COPY_DAY_MODES.REPLACE) {
+    return cloneDayPlanIndependent(source)
+  }
+
+  if (mode === COPY_DAY_MODES.MERGE) {
+    const next = getEmptyDayPlan()
+    for (const slot of PRIMARY_SLOTS) {
+      next[slot] = [...existing[slot], ...clonePlannerItemList(source[slot])]
+    }
+    next.snacks = [...existing.snacks, ...clonePlannerItemList(source.snacks)]
+    return next
+  }
+
+  // selective
+  const selected = new Set(normalizeDayPlanCopySlots(options.slots))
+  const next = getEmptyDayPlan()
+  for (const slot of PRIMARY_SLOTS) {
+    next[slot] = selected.has(slot)
+      ? clonePlannerItemList(source[slot])
+      : [...existing[slot]]
+  }
+
+  const wantSnacks = selected.has('snacks')
+  const wantDesserts = selected.has('desserts')
+  if (!wantSnacks && !wantDesserts) {
+    next.snacks = [...existing.snacks]
+  } else if (wantSnacks && wantDesserts) {
+    next.snacks = clonePlannerItemList(source.snacks)
+  } else {
+    const sourceParts = partitionSnackItems(source.snacks)
+    const existingParts = partitionSnackItems(existing.snacks)
+    next.snacks = [
+      ...(wantSnacks
+        ? clonePlannerItemList(sourceParts.snacks)
+        : existingParts.snacks),
+      ...(wantDesserts
+        ? clonePlannerItemList(sourceParts.desserts)
+        : existingParts.desserts),
+    ]
+  }
+  return next
+}
+
+function emptyCopyDayResult(sourceKey, extra = {}) {
+  return {
+    ok: false,
+    needsReplace: false,
+    errors: {},
+    existing: null,
+    summary: [],
+    plan: getDayPlan(sourceKey),
+    results: [],
+    destinationDateKeys: [],
+    ...extra,
+  }
+}
+
+/**
+ * Copy a day's plan onto one or more target dates as independent snapshots.
+ *
+ * destinationDateKeys: string | string[]
+ * options.mode: 'replace' | 'merge' | 'selective'
+ * options.slots: for selective — breakfast/lunch/dinner/snacks (dessert→snacks)
+ * options.replaceExplicitly: legacy gate when mode is omitted and dest is non-empty
+ */
+export function copyDayPlan(sourceDateKey, destinationDateKeys, options = {}) {
   ensureMigrations()
 
   const sourceKey =
     typeof sourceDateKey === 'string' && sourceDateKey.trim() !== ''
       ? sourceDateKey.trim()
       : getLocalDateKey()
-  const destKey =
-    typeof destinationDateKey === 'string' && destinationDateKey.trim() !== ''
-      ? destinationDateKey.trim()
-      : ''
+  const destKeys = normalizeDestinationDateKeys(destinationDateKeys)
+  const mode = normalizeCopyDayMode(options.mode)
 
-  if (!destKey) {
-    return {
-      ok: false,
-      needsReplace: false,
+  if (destKeys.length === 0) {
+    return emptyCopyDayResult(sourceKey, {
       errors: { destination: 'יש לבחור תאריך יעד' },
-      existing: null,
-      summary: [],
-      plan: getDayPlan(sourceKey),
-    }
+    })
   }
 
-  if (sourceKey === destKey) {
-    return {
-      ok: false,
-      needsReplace: false,
+  if (destKeys.includes(sourceKey)) {
+    return emptyCopyDayResult(sourceKey, {
       errors: { destination: 'תאריך היעד חייב להיות שונה מיום המקור' },
-      existing: null,
-      summary: [],
-      plan: getDayPlan(sourceKey),
+      destinationDateKeys: destKeys,
+    })
+  }
+
+  if (mode === COPY_DAY_MODES.SELECTIVE) {
+    const slots = normalizeDayPlanCopySlots(options.slots)
+    if (slots.length === 0) {
+      return emptyCopyDayResult(sourceKey, {
+        errors: { slots: 'יש לבחור לפחות קטגוריה אחת להעתקה' },
+        destinationDateKeys: destKeys,
+      })
     }
   }
 
   const sourcePlan = getDayPlan(sourceKey)
-  const existingPlan = getDayPlan(destKey)
-  const summary = summarizeDayPlan(existingPlan)
+  const resolvedMode = mode || COPY_DAY_MODES.REPLACE
 
-  if (!isDayPlanEmpty(existingPlan) && !options.replaceExplicitly) {
-    return {
-      ok: false,
-      needsReplace: true,
-      errors: {},
-      existing: existingPlan,
-      summary,
-      plan: existingPlan,
+  // Confirmation when replace would wipe existing content (explicit or legacy).
+  if (
+    resolvedMode === COPY_DAY_MODES.REPLACE &&
+    !options.replaceExplicitly
+  ) {
+    const conflicting = []
+    const summary = []
+    for (const destKey of destKeys) {
+      const existingPlan = getDayPlan(destKey)
+      if (!isDayPlanEmpty(existingPlan)) {
+        conflicting.push(destKey)
+        for (const row of summarizeDayPlan(existingPlan)) {
+          summary.push({ ...row, dateKey: destKey })
+        }
+      }
+    }
+
+    if (conflicting.length > 0) {
+      const primaryExisting = getDayPlan(conflicting[0])
+      return {
+        ok: false,
+        needsReplace: true,
+        errors: {},
+        existing: primaryExisting,
+        summary,
+        plan: primaryExisting,
+        results: [],
+        destinationDateKeys: destKeys,
+        conflictingDateKeys: conflicting,
+      }
     }
   }
 
-  const cloned = cloneDayPlanIndependent(sourcePlan)
-  const saved = saveDayPlan(destKey, cloned)
+  const results = []
+  const previousPlans = {}
+  for (const destKey of destKeys) {
+    const existingPlan = getDayPlan(destKey)
+    previousPlans[destKey] = existingPlan
+    const nextPlan = buildCopiedDayPlan(sourcePlan, existingPlan, {
+      mode: resolvedMode,
+      slots: options.slots,
+    })
+    const saved = saveDayPlan(destKey, nextPlan)
+    results.push({
+      ok: true,
+      destinationDateKey: destKey,
+      plan: saved,
+      previousPlan: existingPlan,
+    })
+  }
 
+  const last = results[results.length - 1]
   return {
     ok: true,
     needsReplace: false,
     errors: {},
     existing: null,
     summary: [],
-    plan: saved,
-    destinationDateKey: destKey,
+    plan: last.plan,
+    destinationDateKey: last.destinationDateKey,
+    destinationDateKeys: destKeys,
+    results,
+    previousPlans,
+    mode: resolvedMode,
+  }
+}
+
+function normalizeWeekDayAction(action) {
+  if (typeof action !== 'string') {
+    return null
+  }
+  const normalized = action.trim().toLowerCase()
+  if (normalized === COPY_WEEK_DAY_ACTIONS.SKIP) {
+    return COPY_WEEK_DAY_ACTIONS.SKIP
+  }
+  return normalizeCopyDayMode(normalized)
+}
+
+function resolveWeekDayAction(destinationDateKey, globalMode, dayModes) {
+  if (dayModes && typeof dayModes === 'object' && !Array.isArray(dayModes)) {
+    const raw = dayModes[destinationDateKey]
+    const action = normalizeWeekDayAction(raw)
+    if (action) {
+      return action
+    }
+  }
+  return globalMode
+}
+
+/**
+ * Empty source days must not wipe destination content unless fullReplace.
+ * Merge/skip of an empty source is always a no-op.
+ */
+function shouldSkipEmptySourceDay(sourcePlan, dayAction, options = {}) {
+  if (!isDayPlanEmpty(sourcePlan)) {
+    return false
+  }
+  if (dayAction === COPY_WEEK_DAY_ACTIONS.SKIP) {
+    return true
+  }
+  if (dayAction === COPY_DAY_MODES.MERGE) {
+    return true
+  }
+  if (options.fullReplace) {
+    return false
+  }
+  return true
+}
+
+function getPlanFromPlansMap(plans, dateKey) {
+  const plan = plans[dateKey]
+  return plan ? normalizeDayPlan(plan) : getEmptyDayPlan()
+}
+
+/**
+ * Copy a Sunday–Saturday week onto another week, day-to-corresponding-day.
+ * Reuses buildCopiedDayPlan for each day. Writes all destination days in one
+ * localStorage update to avoid partial week state.
+ *
+ * options.mode: 'replace' | 'merge' | 'selective' (default replace)
+ * options.slots: selective categories (same as copyDayPlan)
+ * options.fullReplace: when true, empty source days overwrite dest days
+ * options.dayModes: { [destDateKey]: 'replace'|'merge'|'skip'|'selective' }
+ * options.replaceExplicitly: confirm wiping non-empty destinations under replace
+ */
+export function copyWeekPlan(
+  sourceWeekStartKey,
+  destinationWeekStartKey,
+  options = {},
+) {
+  ensureMigrations()
+
+  const sourceWeekStart = getWeekStartKey(
+    typeof sourceWeekStartKey === 'string' && sourceWeekStartKey.trim() !== ''
+      ? sourceWeekStartKey.trim()
+      : getLocalDateKey(),
+  )
+  const destWeekStart =
+    typeof destinationWeekStartKey === 'string' &&
+    destinationWeekStartKey.trim() !== ''
+      ? getWeekStartKey(destinationWeekStartKey.trim())
+      : ''
+
+  if (!destWeekStart) {
+    return {
+      ok: false,
+      needsReplace: false,
+      errors: { destination: 'יש לבחור שבוע יעד' },
+      results: [],
+      pairs: [],
+      previousPlans: {},
+      conflictingDateKeys: [],
+      sourceWeekStartKey: sourceWeekStart,
+      destinationWeekStartKey: '',
+    }
+  }
+
+  const pairs = buildWeekCopyPairs(sourceWeekStart, destWeekStart)
+  const selfPairs = pairs.filter(
+    (pair) => pair.sourceDateKey === pair.destinationDateKey,
+  )
+  if (selfPairs.length > 0) {
+    return {
+      ok: false,
+      needsReplace: false,
+      errors: { destination: 'שבוע היעד חייב להיות שונה משבוע המקור' },
+      results: [],
+      pairs,
+      previousPlans: {},
+      conflictingDateKeys: selfPairs.map((pair) => pair.destinationDateKey),
+      sourceWeekStartKey: sourceWeekStart,
+      destinationWeekStartKey: destWeekStart,
+    }
+  }
+
+  const mode = normalizeCopyDayMode(options.mode) || COPY_DAY_MODES.REPLACE
+  if (mode === COPY_DAY_MODES.SELECTIVE) {
+    const slots = normalizeDayPlanCopySlots(options.slots)
+    if (slots.length === 0) {
+      return {
+        ok: false,
+        needsReplace: false,
+        errors: { slots: 'יש לבחור לפחות קטגוריה אחת להעתקה' },
+        results: [],
+        pairs,
+        previousPlans: {},
+        conflictingDateKeys: [],
+        sourceWeekStartKey: sourceWeekStart,
+        destinationWeekStartKey: destWeekStart,
+      }
+    }
+  }
+
+  const plans = readStoredPlans()
+  const dayModes =
+    options.dayModes && typeof options.dayModes === 'object'
+      ? options.dayModes
+      : null
+
+  const pending = []
+  const conflicting = []
+  const summary = []
+
+  for (const pair of pairs) {
+    const sourcePlan = getPlanFromPlansMap(plans, pair.sourceDateKey)
+    const existingPlan = getPlanFromPlansMap(plans, pair.destinationDateKey)
+    const dayAction = resolveWeekDayAction(
+      pair.destinationDateKey,
+      mode,
+      dayModes,
+    )
+
+    if (dayAction === COPY_WEEK_DAY_ACTIONS.SKIP) {
+      pending.push({
+        ...pair,
+        action: COPY_WEEK_DAY_ACTIONS.SKIP,
+        skip: true,
+        sourcePlan,
+        existingPlan,
+        nextPlan: null,
+      })
+      continue
+    }
+
+    if (shouldSkipEmptySourceDay(sourcePlan, dayAction, options)) {
+      pending.push({
+        ...pair,
+        action: dayAction,
+        skip: true,
+        reason: 'empty_source',
+        sourcePlan,
+        existingPlan,
+        nextPlan: null,
+      })
+      continue
+    }
+
+    const wouldWrite = true
+    const explicitDayAction = dayModes
+      ? normalizeWeekDayAction(dayModes[pair.destinationDateKey])
+      : null
+
+    if (
+      wouldWrite &&
+      !isDayPlanEmpty(existingPlan) &&
+      dayAction === COPY_DAY_MODES.REPLACE &&
+      !options.replaceExplicitly &&
+      !explicitDayAction
+    ) {
+      conflicting.push(pair.destinationDateKey)
+      for (const row of summarizeDayPlan(existingPlan)) {
+        summary.push({ ...row, dateKey: pair.destinationDateKey })
+      }
+    }
+
+    pending.push({
+      ...pair,
+      action: dayAction,
+      skip: false,
+      sourcePlan,
+      existingPlan,
+      nextPlan: null,
+    })
+  }
+
+  if (conflicting.length > 0) {
+    return {
+      ok: false,
+      needsReplace: true,
+      errors: {},
+      results: [],
+      pairs,
+      previousPlans: {},
+      summary,
+      conflictingDateKeys: conflicting,
+      sourceWeekStartKey: sourceWeekStart,
+      destinationWeekStartKey: destWeekStart,
+    }
+  }
+
+  const previousPlans = {}
+  const results = []
+
+  for (const entry of pending) {
+    previousPlans[entry.destinationDateKey] = entry.existingPlan
+
+    if (entry.skip) {
+      results.push({
+        ok: true,
+        skipped: true,
+        reason: entry.reason || entry.action,
+        sourceDateKey: entry.sourceDateKey,
+        destinationDateKey: entry.destinationDateKey,
+        plan: entry.existingPlan,
+        previousPlan: entry.existingPlan,
+      })
+      continue
+    }
+
+    const nextPlan = buildCopiedDayPlan(entry.sourcePlan, entry.existingPlan, {
+      mode: entry.action,
+      slots: options.slots,
+    })
+    plans[entry.destinationDateKey] = nextPlan
+    results.push({
+      ok: true,
+      skipped: false,
+      sourceDateKey: entry.sourceDateKey,
+      destinationDateKey: entry.destinationDateKey,
+      plan: nextPlan,
+      previousPlan: entry.existingPlan,
+      action: entry.action,
+    })
+  }
+
+  writeStoredPlans(plans)
+
+  return {
+    ok: true,
+    needsReplace: false,
+    errors: {},
+    results,
+    pairs,
+    previousPlans,
+    summary: [],
+    conflictingDateKeys: [],
+    sourceWeekStartKey: sourceWeekStart,
+    destinationWeekStartKey: destWeekStart,
+    mode,
+    destinationDateKeys: pairs.map((pair) => pair.destinationDateKey),
   }
 }
 
