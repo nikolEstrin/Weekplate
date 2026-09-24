@@ -105,6 +105,23 @@ function preserveQuantitySelectionOnMouseUp(event) {
   event.preventDefault()
 }
 
+function scrollFormToNameField(nameInputId) {
+  const content = document.querySelector('.app-content')
+  if (content) {
+    content.scrollTop = 0
+  }
+
+  const input = document.getElementById(nameInputId)
+  if (!input) {
+    return
+  }
+
+  input.focus({ preventScroll: true })
+  if (typeof input.scrollIntoView === 'function') {
+    input.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  }
+}
+
 function ingredientToForm(item, productsById) {
   if (isMealIngredient(item)) {
     return {
@@ -391,6 +408,9 @@ function MealsPage() {
 
     if (!result.ok) {
       setErrors(result.errors)
+      if (result.errors?.name) {
+        window.setTimeout(() => scrollFormToNameField('meal-name'), 0)
+      }
       return
     }
 
