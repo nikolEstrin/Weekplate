@@ -10,10 +10,12 @@
       "fatPer100g": 0.2,
       "units": [
         {
+          "id": "689b79b1-eee9-55c3-be02-a47183101604",
           "name": "כף",
           "grams": 15
         },
         {
+          "id": "e3faefe0-2df1-56d2-8cbe-8228a3ea4c60",
           "name": "כוס",
           "grams": 160
         }
@@ -28,6 +30,7 @@
       "fatPer100g": 0.13,
       "units": [
         {
+          "id": "0d203e78-d2ba-554e-b450-34de9e42ee22",
           "name": "יחידה בינונית",
           "grams": 150
         }
@@ -42,6 +45,7 @@
       "fatPer100g": 3.57,
       "units": [
         {
+          "id": "d045c556-886f-5619-821d-7afb9f6acd49",
           "name": "מנה",
           "grams": 150
         }
@@ -56,10 +60,12 @@
       "fatPer100g": 0.62,
       "units": [
         {
+          "id": "f243048d-356f-5acb-87fd-5a1079fa21b9",
           "name": "כף",
           "grams": 15
         },
         {
+          "id": "2508c394-4a50-588b-a15a-bbc2094b7b50",
           "name": "כוס",
           "grams": 170
         }
@@ -74,6 +80,7 @@
       "fatPer100g": 2.5,
       "units": [
         {
+          "id": "cd23922a-4fe7-5316-893d-74f7754a9009",
           "name": "יחידה בינונית",
           "grams": 50
         }
@@ -88,6 +95,7 @@
       "fatPer100g": 0,
       "units": [
         {
+          "id": "2de53b83-b9ac-5fd5-ba7d-8b65d39d5bd2",
           "name": "יחידה",
           "grams": 4
         }
@@ -102,6 +110,7 @@
       "fatPer100g": 0.15,
       "units": [
         {
+          "id": "6099170d-165c-599d-ab9c-2e67b38c7921",
           "name": "יחידה בינונית",
           "grams": 150
         }
@@ -116,6 +125,7 @@
       "fatPer100g": 12.35,
       "units": [
         {
+          "id": "93378fa2-571c-5966-b426-9762fbadc37f",
           "name": "מנה",
           "grams": 150
         }
@@ -130,6 +140,7 @@
       "fatPer100g": 2.65,
       "units": [
         {
+          "id": "82b56291-7740-5808-885b-fe1b3486fff5",
           "name": "יחידה",
           "grams": 150
         }
@@ -144,10 +155,12 @@
       "fatPer100g": 8.21,
       "units": [
         {
+          "id": "0ebcf644-2f94-50ca-b88b-dcb2eceb5987",
           "name": "כף",
           "grams": 20
         },
         {
+          "id": "39c4c476-dd31-5d2d-92de-c0b9a16a1c2c",
           "name": "קופסה",
           "grams": 112
         }
@@ -171,6 +184,7 @@
       "fatPer100g": 16.76,
       "units": [
         {
+          "id": "288ac3b6-617d-5d9a-856d-a70b3c6d75a6",
           "name": "יחידה",
           "grams": 200
         }
@@ -185,6 +199,7 @@
       "fatPer100g": 9.67,
       "units": [
         {
+          "id": "a9d33a06-502d-5fbe-a80a-f8bb36413074",
           "name": "יחידה",
           "grams": 150
         }
@@ -199,10 +214,12 @@
       "fatPer100g": 0.38,
       "units": [
         {
+          "id": "bb25874e-2736-5b86-87a7-08f80c1d7c87",
           "name": "כף",
           "grams": 15
         },
         {
+          "id": "4d162f79-9395-56dc-8fe2-fe8de8af8e00",
           "name": "כוס",
           "grams": 200
         }
@@ -217,10 +234,12 @@
       "fatPer100g": 0.24,
       "units": [
         {
+          "id": "22190f50-66f6-5211-98ff-46f8c815e0ad",
           "name": "כף",
           "grams": 15
         },
         {
+          "id": "26c6891c-ca94-5796-bcea-62d8d82bab9c",
           "name": "כוס",
           "grams": 180
         }
@@ -253,6 +272,7 @@
       "fatPer100g": 5.3,
       "units": [
         {
+          "id": "25ee8f24-023b-52eb-a0c8-86503c5be701",
           "name": "יחידה",
           "grams": 2.5
         }
@@ -267,6 +287,7 @@
       "fatPer100g": 0.11,
       "units": [
         {
+          "id": "c0b9f5cd-3688-5ee9-b3fb-2d2063c8fb4d",
           "name": "יחידה בינונית",
           "grams": 150
         }
@@ -281,6 +302,7 @@
       "fatPer100g": 0.2,
       "units": [
         {
+          "id": "8dd34f14-708b-5a75-bac0-b84b0ec9cf95",
           "name": "יחידה בינונית",
           "grams": 150
         }
@@ -295,6 +317,7 @@
       "fatPer100g": 0.1,
       "units": [
         {
+          "id": "4a84cabc-b5d8-538b-b4dd-3ad9d4ae3021",
           "name": "יחידה בינונית",
           "grams": 125
         }
@@ -309,6 +332,7 @@
       "fatPer100g": 0.19,
       "units": [
         {
+          "id": "b7ee134f-b5fa-59a9-901e-82a4df10aa77",
           "name": "יחידה",
           "grams": 15
         }
@@ -323,6 +347,7 @@
       "fatPer100g": 0.3,
       "units": [
         {
+          "id": "9aec0378-7bcb-5e32-9523-7f3d5cfaa104",
           "name": "יחידה בינונית",
           "grams": 150
         }
@@ -337,6 +362,7 @@
       "fatPer100g": 0.21,
       "units": [
         {
+          "id": "c66ed18a-2331-5e16-8081-a07f998d9380",
           "name": "יחידה בינונית",
           "grams": 150
         }
@@ -351,6 +377,7 @@
       "fatPer100g": 1.6,
       "units": [
         {
+          "id": "03e369c5-13fb-5ffe-b148-f5d2e805a334",
           "name": "יחידה",
           "grams": 50
         }
@@ -365,6 +392,7 @@
       "fatPer100g": 1.2,
       "units": [
         {
+          "id": "d6c2b1d7-bba8-5ec4-abd2-7e310575c396",
           "name": "פרוסה",
           "grams": 25
         }
@@ -379,10 +407,12 @@
       "fatPer100g": 38.2,
       "units": [
         {
+          "id": "c3fe34eb-fdb5-5c97-b362-88898733aea0",
           "name": "כפית",
           "grams": 5
         },
         {
+          "id": "e11a0714-3c3a-5b83-9326-9bfbf3588ae3",
           "name": "כף",
           "grams": 15
         }
@@ -397,10 +427,12 @@
       "fatPer100g": 60.1,
       "units": [
         {
+          "id": "4c5d7860-40cd-5f93-bcec-c8243bc0a699",
           "name": "כפית",
           "grams": 5
         },
         {
+          "id": "41d2f387-5629-5e12-b3fb-4de39bb899bb",
           "name": "כף",
           "grams": 15
         }
@@ -415,6 +447,7 @@
       "fatPer100g": 9,
       "units": [
         {
+          "id": "233d3b06-d92b-5c0e-b239-effc701932f4",
           "name": "פרוסה",
           "grams": 20
         }
@@ -429,6 +462,7 @@
       "fatPer100g": 15,
       "units": [
         {
+          "id": "06d1284b-f4b6-51c2-a5f7-bf47dc9bbe34",
           "name": "פרוסה",
           "grams": 20
         }
@@ -443,10 +477,12 @@
       "fatPer100g": 0.4,
       "units": [
         {
+          "id": "d2c24d0a-247c-5836-ae54-06a46828c0b9",
           "name": "כפית",
           "grams": 5
         },
         {
+          "id": "8e924e02-044f-5f87-8503-f6e2a654ce05",
           "name": "כף",
           "grams": 15
         }
@@ -461,6 +497,7 @@
       "fatPer100g": 1,
       "units": [
         {
+          "id": "a2b8d52a-191a-5934-a0ee-d675bb2fa90f",
           "name": "כף",
           "grams": 15
         }
@@ -493,6 +530,7 @@
       "fatPer100g": 0.24,
       "units": [
         {
+          "id": "5c17cde4-6e30-559e-86a2-d210168dd13e",
           "name": "יחידה בינונית",
           "grams": 70
         }
@@ -507,10 +545,12 @@
       "fatPer100g": 0,
       "units": [
         {
+          "id": "56d2d1b8-f56d-576f-837c-c1075ce75066",
           "name": "כפית",
           "grams": 5
         },
         {
+          "id": "951ba36d-16ba-524b-b02f-68bdd697b82b",
           "name": "כף",
           "grams": 15
         }
@@ -525,10 +565,12 @@
       "fatPer100g": 5,
       "units": [
         {
+          "id": "9321b755-f386-58ad-ac89-e558e9c42072",
           "name": "כף",
           "grams": 20
         },
         {
+          "id": "c4b39477-9f69-554e-8bdd-2485a9380f90",
           "name": "גביע",
           "grams": 250
         }
@@ -543,6 +585,7 @@
       "fatPer100g": 5,
       "units": [
         {
+          "id": "4d890f09-d232-50d0-b474-f74d0d0bdaea",
           "name": "כף",
           "grams": 20
         }
@@ -557,6 +600,7 @@
       "fatPer100g": 10.61,
       "units": [
         {
+          "id": "6a80890c-553c-54e0-918b-b04ce2d1be50",
           "name": "יחידה",
           "grams": 50
         }
@@ -571,6 +615,7 @@
       "fatPer100g": 14.8,
       "units": [
         {
+          "id": "d9480a4d-4b12-5e1e-a0d1-4c8daa4581b0",
           "name": "יחידה",
           "grams": 50
         }
@@ -585,10 +630,12 @@
       "fatPer100g": 5,
       "units": [
         {
+          "id": "11ce0c86-e8f0-5674-9d3b-b6313c4df11b",
           "name": "כף",
           "grams": 20
         },
         {
+          "id": "297165cb-7848-5f83-adb0-bba9c6db0afd",
           "name": "גביע",
           "grams": 250
         }
@@ -603,6 +650,7 @@
       "fatPer100g": 0.2,
       "units": [
         {
+          "id": "b28a3416-6dbe-5057-be11-70ab9ce3ce8d",
           "name": "יחידה",
           "grams": 15
         }
@@ -617,6 +665,7 @@
       "fatPer100g": 3,
       "units": [
         {
+          "id": "6da6c7fc-b496-592c-a11f-1c45480221da",
           "name": "כוס",
           "grams": 240
         }
@@ -631,6 +680,7 @@
       "fatPer100g": 1.1,
       "units": [
         {
+          "id": "87a8c9a5-758b-5145-a26a-62bdb4254f6d",
           "name": "כוס",
           "grams": 240
         }
@@ -645,6 +695,7 @@
       "fatPer100g": 0.33,
       "units": [
         {
+          "id": "ac3c3097-c975-5383-aab4-9aafa369887e",
           "name": "יחידה",
           "grams": 120
         }
@@ -659,6 +710,7 @@
       "fatPer100g": 0.15,
       "units": [
         {
+          "id": "915057d8-c370-5e19-92ec-a1b21ac43b36",
           "name": "יחידה",
           "grams": 20
         }
@@ -673,10 +725,12 @@
       "fatPer100g": 8,
       "units": [
         {
+          "id": "6d58c665-dfb9-512f-b9b6-afee79953574",
           "name": "כף",
           "grams": 10
         },
         {
+          "id": "46c5a205-b3e1-56e2-9853-d06d1a788583",
           "name": "כוס",
           "grams": 80
         }
@@ -691,10 +745,12 @@
       "fatPer100g": 29.8,
       "units": [
         {
+          "id": "c8ebc7a2-7985-536c-b514-d7602cd3350e",
           "name": "כפית",
           "grams": 5
         },
         {
+          "id": "b773f048-c39b-58a8-8ec2-09cb2e0209e2",
           "name": "כף",
           "grams": 15
         }
@@ -709,10 +765,12 @@
       "fatPer100g": 30.7,
       "units": [
         {
+          "id": "e3297371-501a-548e-8052-cd1705e329e1",
           "name": "כפית",
           "grams": 5
         },
         {
+          "id": "df71bb90-d097-559f-a417-4890222aac1c",
           "name": "כף",
           "grams": 12
         }
@@ -727,10 +785,12 @@
       "fatPer100g": 13.7,
       "units": [
         {
+          "id": "caad4954-2308-5481-9cbe-87ee9e7882f5",
           "name": "כפית",
           "grams": 3
         },
         {
+          "id": "53ef312d-79a0-5b80-a577-4860e59c13ea",
           "name": "כף",
           "grams": 8
         }
@@ -745,10 +805,12 @@
       "fatPer100g": 2,
       "units": [
         {
+          "id": "e233cc3b-afbd-57be-a876-0dc6eeba0148",
           "name": "גביע",
           "grams": 150
         },
         {
+          "id": "cb4b0836-aceb-597e-8e18-1d50cdd9c3a0",
           "name": "כף",
           "grams": 27.5
         }
@@ -763,6 +825,7 @@
       "fatPer100g": 0,
       "units": [
         {
+          "id": "d9d4f86c-e3c4-5d14-aa1e-a5ffbae78e0f",
           "name": "גביע",
           "grams": 200
         }
@@ -777,10 +840,12 @@
       "fatPer100g": 0.2,
       "units": [
         {
+          "id": "7cd67f01-b2d7-58f4-b26d-2b6e9f2cabfb",
           "name": "כפית",
           "grams": 7
         },
         {
+          "id": "865258c0-ecf0-5d3e-bb54-fe9528c04e68",
           "name": "כף",
           "grams": 20
         }
@@ -795,10 +860,12 @@
       "fatPer100g": 0.16,
       "units": [
         {
+          "id": "beaa92bd-8c14-54ae-a4f4-5f65de1bb96f",
           "name": "כף",
           "grams": 15
         },
         {
+          "id": "29097335-319e-5bf7-a6fb-d1356013490e",
           "name": "כוס",
           "grams": 160
         }
