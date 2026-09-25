@@ -1,0 +1,17 @@
+project_id = "weekplate"
+
+[auth]
+site_url = "http://localhost:5173"
+additional_redirect_urls = [
+  "weekplate://auth/callback",
+  "http://localhost:5173",
+]
+enable_signup = true
+minimum_password_length = 8
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+
+[functions.delete-account]
+verify_jwt = false
