@@ -497,6 +497,9 @@ function ProductForm({
                   className="input-ltr product-nutrition-card__input"
                   value={form[field.name]}
                   onChange={handleChange}
+                  onFocus={selectAllOnFocus}
+                  onClick={selectAllOnFocus}
+                  onMouseUp={preserveSelectionOnMouseUp}
                   aria-invalid={Boolean(error)}
                   aria-describedby={error ? errorId : undefined}
                 />

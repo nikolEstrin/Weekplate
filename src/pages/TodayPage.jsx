@@ -2,7 +2,9 @@ import { useLayoutEffect, useRef, useState } from 'react'
 import BalanceDaySheet from '../components/BalanceDaySheet.jsx'
 import CopyDaySheet from '../components/CopyDaySheet.jsx'
 import CopyWeekSheet from '../components/CopyWeekSheet.jsx'
+import ImportWeekSheet from '../components/ImportWeekSheet.jsx'
 import MealSwapSheet from '../components/MealSwapSheet.jsx'
+import ShareWeekSheet from '../components/ShareWeekSheet.jsx'
 import {
   addMealToDayPlan,
   addProductToDayPlan,
@@ -564,7 +566,7 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
   const todayKey = getLocalDateKey()
   const [goals] = useState(() => getGoals())
   const [products, setProducts] = useState(() => getProducts())
-  const [meals] = useState(() => getMeals())
+  const [meals, setMeals] = useState(() => getMeals())
   const [weekStartKey, setWeekStartKey] = useState(() =>
     getWeekStartKey(selectedDateKey),
   )
@@ -574,6 +576,8 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
   const [addTab, setAddTab] = useState('meals')
   const [mealQuery, setMealQuery] = useState('')
   const [tagFilter, setTagFilter] = useState('all')
+  const [maxCaloriesFilter, setMaxCaloriesFilter] = useState('')
+  const [minProteinFilter, setMinProteinFilter] = useState('')
   const [productQuery, setProductQuery] = useState('')
   const [productQuantities, setProductQuantities] = useState({})
   const [productUnits, setProductUnits] = useState({})
@@ -587,6 +591,8 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
   const [preferredSlot, setPreferredSlot] = useState(null)
   const [copySourceKey, setCopySourceKey] = useState(null)
   const [copyWeekOpen, setCopyWeekOpen] = useState(false)
+  const [shareWeekOpen, setShareWeekOpen] = useState(false)
+  const [importWeekOpen, setImportWeekOpen] = useState(false)
   const [copyToast, setCopyToast] = useState(null)
   const [swapItemId, setSwapItemId] = useState(null)
   const [balanceSheetOpen, setBalanceSheetOpen] = useState(false)
@@ -753,10 +759,75 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
     setCopyWeekOpen(false)
   }
 
+  function openShareWeek() {
+    setShareWeekOpen(true)
+  }
+
+  function closeShareWeek() {
+    setShareWeekOpen(false)
+  }
+
+  function openImportWeek() {
+    setImportWeekOpen(true)
+  }
+
+  function closeImportWeek() {
+    setImportWeekOpen(false)
+  }
+
   function handleCopySuccess({ previousPlans, destinationDateKeys }) {
     refreshPlan()
     showCopyToast({
       message: 'הועתק בהצלחה',
+      previousPlans:
+        previousPlans && typeof previousPlans === 'object' ? previousPlans : {},
+      destinationDateKeys: Array.isArray(destinationDateKeys)
+        ? destinationDateKeys
+        : [],
+    })
+  }
+
+  function handleImportWeekSuccess({
+    previousPlans,
+    destinationDateKeys,
+    products: nextProducts,
+    meals: nextMeals,
+    productsAdded,
+    mealsAdded,
+    destinationWeekStartKey,
+  }) {
+    if (Array.isArray(nextProducts)) {
+      setProducts(nextProducts)
+    } else {
+      setProducts(getProducts())
+    }
+    if (Array.isArray(nextMeals)) {
+      setMeals(nextMeals)
+    } else {
+      setMeals(getMeals())
+    }
+
+    if (
+      typeof destinationWeekStartKey === 'string' &&
+      destinationWeekStartKey !== ''
+    ) {
+      setWeekStartKey(destinationWeekStartKey)
+      selectDate(destinationWeekStartKey)
+    } else {
+      refreshPlan()
+    }
+
+    const addedBits = []
+    if (productsAdded > 0) {
+      addedBits.push(`${productsAdded} מוצרים`)
+    }
+    if (mealsAdded > 0) {
+      addedBits.push(`${mealsAdded} ארוחות`)
+    }
+    const suffix = addedBits.length > 0 ? ` · נוספו ${addedBits.join(', ')}` : ''
+
+    showCopyToast({
+      message: `השבוע יובא בהצלחה${suffix}`,
       previousPlans:
         previousPlans && typeof previousPlans === 'object' ? previousPlans : {},
       destinationDateKeys: Array.isArray(destinationDateKeys)
@@ -782,6 +853,8 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
     setAddTab('meals')
     setMealQuery('')
     setTagFilter('all')
+    setMaxCaloriesFilter('')
+    setMinProteinFilter('')
     setProductQuery('')
     setProductQuantities({})
     setProductUnits({})
@@ -1395,6 +1468,17 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
       }
 
   const normalizedMealQuery = mealQuery.trim().toLowerCase()
+  const maxCaloriesValue = Number(String(maxCaloriesFilter).trim())
+  const minProteinValue = Number(String(minProteinFilter).trim())
+  const hasMaxCalories =
+    String(maxCaloriesFilter).trim() !== '' &&
+    Number.isFinite(maxCaloriesValue) &&
+    maxCaloriesValue >= 0
+  const hasMinProtein =
+    String(minProteinFilter).trim() !== '' &&
+    Number.isFinite(minProteinValue) &&
+    minProteinValue >= 0
+
   const visibleMeals = meals.filter((meal) => {
     const tags = mealTags(meal)
     const matchesTag =
@@ -1402,10 +1486,23 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
     if (!matchesTag) {
       return false
     }
-    if (!normalizedMealQuery) {
+    if (
+      normalizedMealQuery &&
+      !meal.name.toLowerCase().includes(normalizedMealQuery)
+    ) {
+      return false
+    }
+    if (!hasMaxCalories && !hasMinProtein) {
       return true
     }
-    return meal.name.toLowerCase().includes(normalizedMealQuery)
+    const nutrition = calculateMealNutrition(meal, products, meals)
+    if (hasMaxCalories && nutrition.calories > maxCaloriesValue) {
+      return false
+    }
+    if (hasMinProtein && nutrition.protein < minProteinValue) {
+      return false
+    }
+    return true
   })
 
   const normalizedProductQuery = productQuery.trim().toLowerCase()
@@ -1590,6 +1687,49 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
                   {tag.label}
                 </button>
               ))}
+            </div>
+
+            <div
+              className="meal-nutrition-filters"
+              role="group"
+              aria-label="סינון לפי תזונה"
+            >
+              <label className="meal-nutrition-filter">
+                <span className="meal-nutrition-filter__label">
+                  עד קלוריות
+                </span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="any"
+                  className="input-ltr meal-nutrition-filter__input"
+                  value={maxCaloriesFilter}
+                  onChange={(event) =>
+                    setMaxCaloriesFilter(event.target.value)
+                  }
+                  placeholder="למשל 400"
+                  aria-label="מקסימום קלוריות"
+                />
+              </label>
+                  <label className="meal-nutrition-filter">
+                <span className="meal-nutrition-filter__label">
+                  מינימום חלבון
+                </span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0"
+                  step="any"
+                  className="input-ltr meal-nutrition-filter__input"
+                  value={minProteinFilter}
+                  onChange={(event) =>
+                    setMinProteinFilter(event.target.value)
+                  }
+                  placeholder="למשל 20"
+                  aria-label="מינימום חלבון בגרמים"
+                />
+              </label>
             </div>
 
             {visibleMeals.length === 0 ? (
@@ -1820,6 +1960,22 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
             aria-label={`העתקת שבוע ${formatDateLabel(weekStartKey)}`}
           >
             העתק שבוע
+          </button>
+          <button
+            type="button"
+            className="week-selector__copy-btn week-selector__copy-btn--week"
+            onClick={openShareWeek}
+            aria-label={`שיתוף שבוע ${formatDateLabel(weekStartKey)}`}
+          >
+            שתף שבוע
+          </button>
+          <button
+            type="button"
+            className="week-selector__copy-btn week-selector__copy-btn--week"
+            onClick={openImportWeek}
+            aria-label="ייבוא שבוע מקובץ"
+          >
+            ייבוא שבוע
           </button>
         </div>
       </header>
@@ -2063,6 +2219,13 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
               : Array.isArray(dayPlan.snacks)
                 ? dayPlan.snacks
                 : []
+          const slotDisplayItems = items.map(
+            (item) => displayById.get(item.id) || item,
+          )
+          const slotNutrition =
+            items.length > 0
+              ? calculatePlannerNutrition(slotDisplayItems, products)
+              : null
 
           return (
             <section
@@ -2088,6 +2251,12 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
                   +
                 </button>
               </div>
+
+              {slotNutrition ? (
+                <div className="slot-section__nutrition">
+                  <NutritionSummary nutrition={slotNutrition} />
+                </div>
+              ) : null}
 
               {items.length === 0 ? (
                 <div className="slot-section__empty">
@@ -2187,6 +2356,21 @@ function TodayPage({ selectedDateKey, onSelectedDateChange }) {
           sourceWeekStartKey={weekStartKey}
           onClose={closeCopyWeek}
           onSuccess={handleCopySuccess}
+        />
+      ) : null}
+
+      {shareWeekOpen ? (
+        <ShareWeekSheet
+          weekStartKey={weekStartKey}
+          onClose={closeShareWeek}
+        />
+      ) : null}
+
+      {importWeekOpen ? (
+        <ImportWeekSheet
+          defaultWeekStartKey={weekStartKey}
+          onClose={closeImportWeek}
+          onSuccess={handleImportWeekSuccess}
         />
       ) : null}
 

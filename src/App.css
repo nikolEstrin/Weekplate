@@ -15,6 +15,7 @@
   box-shadow: var(--shadow-float);
   overflow-x: hidden;
   overflow-y: hidden;
+  overscroll-behavior-x: none;
 }
 
 .app-content {
@@ -453,7 +454,7 @@
   display: flex;
   align-items: center;
   margin-inline: calc(-1 * var(--space-4));
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-4) var(--space-4);
   background:
     linear-gradient(
       180deg,
@@ -1201,6 +1202,7 @@
   padding-bottom: 2px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  touch-action: pan-x pan-y;
 }
 
 .meal-filter-chips::-webkit-scrollbar,
@@ -1232,6 +1234,43 @@
   background: var(--color-accent);
   color: #ffffff;
   box-shadow: 0 2px 8px rgba(91, 185, 138, 0.3);
+}
+
+.meal-nutrition-filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.meal-nutrition-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.meal-nutrition-filter__label {
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-muted);
+}
+
+.meal-nutrition-filter__input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 1rem;
+  box-sizing: border-box;
+}
+
+.meal-nutrition-filter__input:focus {
+  outline: none;
+  border-color: var(--color-accent);
 }
 
 .tag-chip {
@@ -1450,6 +1489,89 @@
 
 .meal-ingredient-row__product[aria-invalid='true'] {
   border-color: var(--color-danger);
+}
+
+.meal-component-picker {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  z-index: 1;
+}
+
+.meal-component-picker:focus-within {
+  z-index: 6;
+}
+
+.meal-component-picker__input {
+  width: 100%;
+}
+
+.meal-component-picker__list {
+  position: absolute;
+  inset-inline: 0;
+  top: calc(100% + 4px);
+  z-index: 7;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  max-height: min(260px, 45vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow-float);
+}
+
+.meal-component-picker__group {
+  margin: 0;
+  padding: 0;
+}
+
+.meal-component-picker__group + .meal-component-picker__group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+}
+
+.meal-component-picker__group-label {
+  display: block;
+  padding: 6px 10px 4px;
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-muted);
+}
+
+.meal-component-picker__group-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.meal-component-picker__option {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  text-align: start;
+}
+
+.meal-component-picker__option--selected {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  font-weight: var(--font-weight-semibold);
+}
+
+.meal-component-picker__empty {
+  padding: 12px;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  text-align: center;
 }
 
 .meal-ingredient-row--meal .meal-ingredient-row__main {
@@ -3308,7 +3430,8 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--space-2);
+  gap: 6px;
+  max-width: min(100%, 280px);
 }
 
 .week-selector__date-input {
@@ -3536,6 +3659,7 @@
   -webkit-overflow-scrolling: touch;
   padding-bottom: 2px;
   scrollbar-width: none;
+  touch-action: pan-x pan-y;
 }
 
 .copy-day-sheet__chips::-webkit-scrollbar {
@@ -3818,6 +3942,28 @@
   font-size: 0.8rem;
 }
 
+.share-week-sheet__list {
+  margin: 0;
+  padding: 0 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--color-text-muted);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.share-week-sheet__download {
+  width: 100%;
+}
+
+.import-week-sheet__file-ok {
+  margin: var(--space-2) 0 0;
+  color: var(--color-accent-strong);
+  font-size: 0.9rem;
+  font-weight: var(--font-weight-semibold);
+}
+
 .copy-week-sheet__conflict-banner {
   margin: 0 0 var(--space-2);
   padding: var(--space-2) var(--space-3);
@@ -4029,6 +4175,16 @@
   font-weight: var(--font-weight-semibold);
   line-height: 1;
   box-shadow: var(--shadow-soft);
+}
+
+.slot-section__nutrition {
+  padding: 0 4px 2px;
+}
+
+.slot-section__nutrition .today-item__nutrition {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: var(--font-weight-medium);
 }
 
 .slot-section--breakfast .slot-section__add {

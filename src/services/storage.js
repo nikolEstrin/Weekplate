@@ -105,6 +105,65 @@ const STARTER_PRODUCT_IDS = new Set(
   ).filter(Boolean),
 )
 
+/**
+ * Stable signature for comparing unit lists (name + grams only).
+ * Ignores unit ids — starters get fresh ids on first seed.
+ */
+function productUnitsSignature(units) {
+  if (!Array.isArray(units)) {
+    return ''
+  }
+
+  const parts = []
+  for (const entry of units) {
+    if (!entry || typeof entry !== 'object') {
+      continue
+    }
+    const name = typeof entry.name === 'string' ? entry.name.trim() : ''
+    if (!name) {
+      continue
+    }
+    const grams = parseNumber(entry.grams)
+    if (!Number.isFinite(grams) || grams <= 0) {
+      continue
+    }
+    parts.push(`${name}\0${grams}`)
+  }
+  parts.sort()
+  return parts.join('\n')
+}
+
+const BUNDLED_STARTER_UNITS_SIGNATURE = new Map()
+for (const rawStarter of STARTER_PRODUCTS) {
+  if (!rawStarter || typeof rawStarter !== 'object') {
+    continue
+  }
+  const id =
+    typeof rawStarter.id === 'string' ? rawStarter.id.trim() : ''
+  if (!id) {
+    continue
+  }
+  BUNDLED_STARTER_UNITS_SIGNATURE.set(
+    id,
+    productUnitsSignature(rawStarter.units),
+  )
+}
+
+/** True when a starter product's units differ from the bundled defaults. */
+function starterHasCustomUnits(product) {
+  if (!product || typeof product.id !== 'string') {
+    return false
+  }
+  if (!STARTER_PRODUCT_IDS.has(product.id)) {
+    return false
+  }
+  const bundled = BUNDLED_STARTER_UNITS_SIGNATURE.get(product.id)
+  if (bundled === undefined) {
+    return false
+  }
+  return productUnitsSignature(product.units) !== bundled
+}
+
 function createId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
@@ -1220,9 +1279,11 @@ function mergeProductCatalogs(...lists) {
 export function exportLibrary() {
   return {
     version: LIBRARY_VERSION,
-    // Bundled starters are re-seeded on load — omit them from backups.
+    // Bundled starters are re-seeded on load — omit unchanged ones.
+    // Include starters whose units were customized so importers get them.
     products: getProducts().filter(
-      (product) => !STARTER_PRODUCT_IDS.has(product.id),
+      (product) =>
+        !STARTER_PRODUCT_IDS.has(product.id) || starterHasCustomUnits(product),
     ),
     meals: getMeals(),
   }
@@ -1476,6 +1537,336 @@ export function importLibrary(data, mode) {
     ok: true,
     products: nextProducts,
     meals: nextMeals,
+  }
+}
+
+const WEEK_PREP_VERSION = 1
+const WEEK_PREP_TYPE = 'weekplate-week-prep'
+
+/** Export one Sunday–Saturday week of plans plus products/meals library. */
+export function exportWeekPrep(weekStartKey) {
+  ensureMigrations()
+
+  const sourceWeekStart = getWeekStartKey(
+    typeof weekStartKey === 'string' && weekStartKey.trim() !== ''
+      ? weekStartKey.trim()
+      : getLocalDateKey(),
+  )
+  const dayKeys = getWeekDayKeys(sourceWeekStart)
+  const days = {}
+  for (const key of dayKeys) {
+    days[key] = normalizeDayPlan(getDayPlan(key))
+  }
+
+  const library = exportLibrary()
+  return {
+    version: WEEK_PREP_VERSION,
+    type: WEEK_PREP_TYPE,
+    sourceWeekStartKey: sourceWeekStart,
+    days,
+    products: library.products,
+    meals: library.meals,
+  }
+}
+
+export function getWeekPrepExportFilename(weekStartKey, date = new Date()) {
+  const weekStart = getWeekStartKey(
+    typeof weekStartKey === 'string' && weekStartKey.trim() !== ''
+      ? weekStartKey.trim()
+      : getLocalDateKey(),
+  )
+  return `weekplate-week-prep-${weekStart}-${getLocalDateKey(date)}.json`
+}
+
+/**
+ * Parse week-prep JSON text. Does not write storage.
+ * @returns {{ ok: true, data: unknown } | { ok: false, error: string }}
+ */
+export function parseWeekPrepJson(text) {
+  return parseLibraryJson(text)
+}
+
+/**
+ * Validate a week-prep payload before any write.
+ * @returns {{
+ *   ok: boolean,
+ *   error?: string,
+ *   sourceWeekStartKey?: string,
+ *   days?: Record<string, object>,
+ *   products?: object[],
+ *   meals?: object[],
+ * }}
+ */
+export function validateWeekPrepImport(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return { ok: false, error: 'מבנה הקובץ אינו תקין' }
+  }
+
+  if (data.type !== WEEK_PREP_TYPE) {
+    return { ok: false, error: 'סוג קובץ לא נתמך (נדרש תכנון שבועי)' }
+  }
+
+  if (data.version !== WEEK_PREP_VERSION) {
+    return { ok: false, error: 'גרסת קובץ לא נתמכת' }
+  }
+
+  const sourceWeekStart =
+    typeof data.sourceWeekStartKey === 'string' &&
+    data.sourceWeekStartKey.trim() !== ''
+      ? getWeekStartKey(data.sourceWeekStartKey.trim())
+      : ''
+  if (!sourceWeekStart) {
+    return { ok: false, error: 'חסר שבוע מקור בקובץ' }
+  }
+
+  if (!data.days || typeof data.days !== 'object' || Array.isArray(data.days)) {
+    return { ok: false, error: 'ימי השבוע בקובץ אינם תקינים' }
+  }
+
+  const expectedKeys = getWeekDayKeys(sourceWeekStart)
+  const days = {}
+  for (const key of expectedKeys) {
+    const raw = data.days[key]
+    days[key] = raw ? normalizeDayPlan(raw) : getEmptyDayPlan()
+  }
+
+  // Reuse library validation (merge catalog) for products + meals structure.
+  const libraryCheck = validateLibraryImport(
+    {
+      version: LIBRARY_VERSION,
+      products: Array.isArray(data.products) ? data.products : [],
+      meals: Array.isArray(data.meals) ? data.meals : [],
+    },
+    'merge',
+  )
+  if (!libraryCheck.ok) {
+    return { ok: false, error: libraryCheck.error || 'ספריית המוצרים/ארוחות אינה תקינה' }
+  }
+
+  return {
+    ok: true,
+    sourceWeekStartKey: sourceWeekStart,
+    days,
+    products: libraryCheck.products,
+    meals: libraryCheck.meals,
+  }
+}
+
+/**
+ * Import week prep: add missing products/meals only (never overwrite existing),
+ * then write planned day snapshots onto the destination week.
+ *
+ * Planned quantities always come from the file — never rebuilt from local meals.
+ *
+ * options.mode: 'replace' | 'merge' (default replace)
+ * options.dayModes: { [destDateKey]: 'replace'|'merge'|'skip' }
+ * options.replaceExplicitly: confirm wiping non-empty destinations under replace
+ */
+export function importWeekPrep(data, destinationWeekStartKey, options = {}) {
+  ensureMigrations()
+
+  const validated = validateWeekPrepImport(data)
+  if (!validated.ok) {
+    return {
+      ok: false,
+      needsReplace: false,
+      error: validated.error,
+      errors: { file: validated.error },
+      results: [],
+      pairs: [],
+      previousPlans: {},
+      conflictingDateKeys: [],
+      productsAdded: 0,
+      mealsAdded: 0,
+      sourceWeekStartKey: '',
+      destinationWeekStartKey: '',
+    }
+  }
+
+  const destWeekStart =
+    typeof destinationWeekStartKey === 'string' &&
+    destinationWeekStartKey.trim() !== ''
+      ? getWeekStartKey(destinationWeekStartKey.trim())
+      : ''
+
+  if (!destWeekStart) {
+    return {
+      ok: false,
+      needsReplace: false,
+      error: 'יש לבחור שבוע יעד',
+      errors: { destination: 'יש לבחור שבוע יעד' },
+      results: [],
+      pairs: [],
+      previousPlans: {},
+      conflictingDateKeys: [],
+      productsAdded: 0,
+      mealsAdded: 0,
+      sourceWeekStartKey: validated.sourceWeekStartKey,
+      destinationWeekStartKey: '',
+    }
+  }
+
+  const pairs = buildWeekCopyPairs(validated.sourceWeekStartKey, destWeekStart)
+  const mode = normalizeCopyDayMode(options.mode) || COPY_DAY_MODES.REPLACE
+  const dayModes =
+    options.dayModes && typeof options.dayModes === 'object'
+      ? options.dayModes
+      : null
+
+  const plans = readStoredPlans()
+  const pending = []
+  const conflicting = []
+  const summary = []
+
+  for (const pair of pairs) {
+    const sourcePlan = validated.days[pair.sourceDateKey] || getEmptyDayPlan()
+    const existingPlan = getPlanFromPlansMap(plans, pair.destinationDateKey)
+    const dayAction = resolveWeekDayAction(
+      pair.destinationDateKey,
+      mode,
+      dayModes,
+    )
+
+    if (dayAction === COPY_WEEK_DAY_ACTIONS.SKIP) {
+      pending.push({
+        ...pair,
+        action: COPY_WEEK_DAY_ACTIONS.SKIP,
+        skip: true,
+        sourcePlan,
+        existingPlan,
+      })
+      continue
+    }
+
+    if (shouldSkipEmptySourceDay(sourcePlan, dayAction, options)) {
+      pending.push({
+        ...pair,
+        action: dayAction,
+        skip: true,
+        reason: 'empty_source',
+        sourcePlan,
+        existingPlan,
+      })
+      continue
+    }
+
+    const explicitDayAction = dayModes
+      ? normalizeWeekDayAction(dayModes[pair.destinationDateKey])
+      : null
+
+    if (
+      !isDayPlanEmpty(existingPlan) &&
+      dayAction === COPY_DAY_MODES.REPLACE &&
+      !options.replaceExplicitly &&
+      !explicitDayAction
+    ) {
+      conflicting.push(pair.destinationDateKey)
+      for (const row of summarizeDayPlan(existingPlan)) {
+        summary.push({ ...row, dateKey: pair.destinationDateKey })
+      }
+    }
+
+    pending.push({
+      ...pair,
+      action: dayAction,
+      skip: false,
+      sourcePlan,
+      existingPlan,
+    })
+  }
+
+  if (conflicting.length > 0) {
+    return {
+      ok: false,
+      needsReplace: true,
+      error: '',
+      errors: {},
+      results: [],
+      pairs,
+      previousPlans: {},
+      summary,
+      conflictingDateKeys: conflicting,
+      productsAdded: 0,
+      mealsAdded: 0,
+      sourceWeekStartKey: validated.sourceWeekStartKey,
+      destinationWeekStartKey: destWeekStart,
+    }
+  }
+
+  // Library: skip-existing by id (receiver keeps their saved quantities).
+  const existingProducts = getProducts()
+  const existingProductIds = new Set(existingProducts.map((p) => p.id))
+  const productsToAdd = validated.products.filter(
+    (product) => !existingProductIds.has(product.id),
+  )
+  if (productsToAdd.length > 0) {
+    saveProducts([...existingProducts, ...productsToAdd])
+  }
+
+  const existingMeals = getMeals()
+  const existingMealIds = new Set(existingMeals.map((m) => m.id))
+  const mealsToAdd = validated.meals.filter(
+    (meal) => !existingMealIds.has(meal.id),
+  )
+  if (mealsToAdd.length > 0) {
+    saveMeals([...existingMeals, ...mealsToAdd])
+  }
+
+  // Plans: write exported snapshots as-is (cloneDayPlanIndependent via buildCopiedDayPlan).
+  const previousPlans = {}
+  const results = []
+
+  for (const entry of pending) {
+    previousPlans[entry.destinationDateKey] = entry.existingPlan
+
+    if (entry.skip) {
+      results.push({
+        ok: true,
+        skipped: true,
+        reason: entry.reason || entry.action,
+        sourceDateKey: entry.sourceDateKey,
+        destinationDateKey: entry.destinationDateKey,
+        plan: entry.existingPlan,
+        previousPlan: entry.existingPlan,
+      })
+      continue
+    }
+
+    const nextPlan = buildCopiedDayPlan(entry.sourcePlan, entry.existingPlan, {
+      mode: entry.action,
+    })
+    plans[entry.destinationDateKey] = nextPlan
+    results.push({
+      ok: true,
+      skipped: false,
+      sourceDateKey: entry.sourceDateKey,
+      destinationDateKey: entry.destinationDateKey,
+      plan: nextPlan,
+      previousPlan: entry.existingPlan,
+      action: entry.action,
+    })
+  }
+
+  writeStoredPlans(plans)
+
+  return {
+    ok: true,
+    needsReplace: false,
+    error: '',
+    errors: {},
+    results,
+    pairs,
+    previousPlans,
+    summary: [],
+    conflictingDateKeys: [],
+    productsAdded: productsToAdd.length,
+    mealsAdded: mealsToAdd.length,
+    sourceWeekStartKey: validated.sourceWeekStartKey,
+    destinationWeekStartKey: destWeekStart,
+    mode,
+    destinationDateKeys: pairs.map((pair) => pair.destinationDateKey),
+    products: getProducts(),
+    meals: getMeals(),
   }
 }
 

@@ -405,6 +405,73 @@ check('IMPORT/EXPORT: export merge replace invalid JSON refs goals plans', () =>
   assert.ok(storage.getDayPlan(planDate).lunch)
 })
 
+check('IMPORT/EXPORT: custom starter units are exported and imported', () => {
+  store.clear()
+  storage.ensureStarterProducts()
+  const starters = storage.getProducts()
+  assert.ok(starters.length > 0, 'starters seeded')
+
+  const starter = starters[0]
+  const customUnit = {
+    id: 'custom-unit-export-test',
+    name: 'יחידה מותאמת',
+    grams: 77,
+  }
+  const updated = storage.updateProduct(starter.id, {
+    ...starter,
+    units: [...(starter.units || []), customUnit],
+  })
+  assert.ok(updated.ok)
+
+  const meal = storage.addMeal(
+    {
+      name: 'ארוחה עם יחידה מותאמת',
+      tags: ['lunch'],
+      ingredients: [
+        {
+          productId: starter.id,
+          quantityGrams: 77,
+          unitId: customUnit.id,
+          unitName: customUnit.name,
+          unitGrams: customUnit.grams,
+        },
+      ],
+    },
+    storage.getProducts(),
+  ).meal
+  assert.ok(meal)
+
+  const exported = storage.exportLibrary()
+  const exportedStarter = exported.products.find((p) => p.id === starter.id)
+  assert.ok(exportedStarter, 'customized starter included in export')
+  assert.ok(
+    exportedStarter.units.some((u) => u.id === customUnit.id && u.grams === 77),
+    'custom unit present in export',
+  )
+  // Unmodified starters stay out of the export.
+  assert.equal(
+    exported.products.filter((p) =>
+      starters.some((s) => s.id === p.id && s.id !== starter.id),
+    ).length,
+    0,
+  )
+
+  // Fresh user imports the library.
+  store.clear()
+  storage.ensureStarterProducts()
+  const beforeUnits = storage.getProducts().find((p) => p.id === starter.id).units
+  assert.ok(!beforeUnits.some((u) => u.id === customUnit.id))
+
+  const imported = storage.importLibrary(exported, 'merge')
+  assert.ok(imported.ok)
+  const after = storage.getProducts().find((p) => p.id === starter.id)
+  assert.ok(
+    after.units.some((u) => u.id === customUnit.id && u.name === customUnit.name),
+    'importer receives custom starter units',
+  )
+  assert.ok(storage.getMeals().some((m) => m.id === meal.id))
+})
+
 // --- LEGACY ---
 check('LEGACY: products without units + single-tag meals + today migration idempotent', () => {
   store.clear()

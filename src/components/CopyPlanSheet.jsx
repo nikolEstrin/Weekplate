@@ -15,6 +15,9 @@ export function CopyPlanSheet({
   submitLabel,
   onSubmit,
   submitDisabled = false,
+  quantityTitle = 'הכמויות נשמרות',
+  quantityText = 'כל הכמויות והמנות יועתקו כפי שהן',
+  hideQuantityNote = false,
 }) {
   return (
     <div className={`today-sheet-root copy-plan-root copy-plan-root--${theme}`}>
@@ -66,12 +69,12 @@ export function CopyPlanSheet({
 
           {children}
 
-          <p className="copy-day-sheet__quantity-note" role="note">
-            <span className="copy-day-sheet__quantity-title">הכמויות נשמרות</span>
-            <span className="copy-day-sheet__quantity-text">
-              כל הכמויות והמנות יועתקו כפי שהן
-            </span>
-          </p>
+          {!hideQuantityNote ? (
+            <p className="copy-day-sheet__quantity-note" role="note">
+              <span className="copy-day-sheet__quantity-title">{quantityTitle}</span>
+              <span className="copy-day-sheet__quantity-text">{quantityText}</span>
+            </p>
+          ) : null}
 
           {error ? (
             <p className="product-field__error" role="alert">

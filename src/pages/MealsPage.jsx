@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   addMeal,
   defaultQuantityForUnit,
@@ -30,23 +30,40 @@ const TAG_LABELS = Object.fromEntries(
   MEAL_TAGS.map((tag) => [tag.id, tag.label]),
 )
 
+const DEFAULT_PRODUCT_QUANTITY = defaultQuantityForUnit(GRAMS_UNIT)
+
 const EMPTY_INGREDIENT = {
   kind: 'product',
   productId: '',
   mealId: '',
-  quantity: '',
+  quantity: DEFAULT_PRODUCT_QUANTITY,
   multiplier: '1',
   unitId: GRAMS_UNIT.id,
 }
 
 const EMPTY_FORM = {
   name: '',
-  tags: ['breakfast'],
+  tags: [],
   ingredients: [{ ...EMPTY_INGREDIENT }],
 }
 
 const PICKER_PREFIX_PRODUCT = 'product:'
 const PICKER_PREFIX_MEAL = 'meal:'
+
+/** Survives MealsPage unmount when switching bottom-nav tabs. */
+let mealFormDraft = null
+
+function clearMealFormDraft() {
+  mealFormDraft = null
+}
+
+function readMealFormDraft() {
+  return mealFormDraft
+}
+
+function writeMealFormDraft(draft) {
+  mealFormDraft = draft
+}
 
 function formatMacro(value) {
   const decimals = value % 1 === 0 ? 0 : 1
@@ -177,7 +194,7 @@ function mealToForm(meal, productsById) {
   )
   return {
     name: meal.name,
-    tags: tags.length > 0 ? tags : ['breakfast'],
+    tags: tags.length > 0 ? tags : [],
     ingredients:
       Array.isArray(meal.ingredients) && meal.ingredients.length > 0
         ? meal.ingredients.map((item) => ingredientToForm(item, productsById))
@@ -211,6 +228,184 @@ function pickerValueForIngredient(ingredient) {
   return ''
 }
 
+function pickerLabelForValue(value, productsById, mealsById) {
+  if (!value) {
+    return ''
+  }
+  if (value.startsWith(PICKER_PREFIX_MEAL)) {
+    const meal = mealsById.get(value.slice(PICKER_PREFIX_MEAL.length))
+    return meal ? `🍽️ ${meal.name}` : ''
+  }
+  if (value.startsWith(PICKER_PREFIX_PRODUCT)) {
+    const product = productsById.get(value.slice(PICKER_PREFIX_PRODUCT.length))
+    return product ? product.name : ''
+  }
+  return ''
+}
+
+function IngredientComponentPicker({
+  id,
+  value,
+  products,
+  meals,
+  isMealRow,
+  invalid,
+  describedBy,
+  onPick,
+}) {
+  const rootRef = useRef(null)
+  const inputRef = useRef(null)
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+
+  const productsById = new Map(products.map((product) => [product.id, product]))
+  const mealsById = new Map(meals.map((meal) => [meal.id, meal]))
+  const selectedLabel = pickerLabelForValue(value, productsById, mealsById)
+
+  const normalizedQuery = query.trim().toLowerCase()
+  const filteredProducts = normalizedQuery
+    ? products.filter((item) =>
+        item.name.toLowerCase().includes(normalizedQuery),
+      )
+    : products
+  const filteredMeals = normalizedQuery
+    ? meals.filter((item) => item.name.toLowerCase().includes(normalizedQuery))
+    : meals
+  const hasResults = filteredProducts.length > 0 || filteredMeals.length > 0
+
+  useEffect(() => {
+    if (!open) {
+      return undefined
+    }
+
+    function handlePointerDown(event) {
+      if (rootRef.current && !rootRef.current.contains(event.target)) {
+        setOpen(false)
+        setQuery('')
+      }
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+    }
+  }, [open])
+
+  function openPicker() {
+    if (!open) {
+      setQuery('')
+    }
+    setOpen(true)
+  }
+
+  function handleSelect(nextValue) {
+    onPick(nextValue)
+    setOpen(false)
+    setQuery('')
+  }
+
+  const inputClassName = [
+    'meal-ingredient-row__product',
+    'meal-component-picker__input',
+    isMealRow ? 'meal-ingredient-row__product--meal' : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  return (
+    <div className="meal-component-picker" ref={rootRef}>
+      <input
+        ref={inputRef}
+        id={id}
+        type="text"
+        role="combobox"
+        className={inputClassName}
+        value={open ? query : selectedLabel}
+        placeholder="בחרו מוצר או ארוחה"
+        autoComplete="off"
+        autoCorrect="off"
+        spellCheck={false}
+        aria-expanded={open}
+        aria-controls={`${id}-listbox`}
+        aria-autocomplete="list"
+        aria-invalid={invalid}
+        aria-describedby={describedBy}
+        onChange={(event) => {
+          setQuery(event.target.value)
+          setOpen(true)
+        }}
+        onFocus={openPicker}
+        onClick={openPicker}
+      />
+      {open ? (
+        <ul
+          id={`${id}-listbox`}
+          className="meal-component-picker__list"
+          role="listbox"
+        >
+          {!hasResults ? (
+            <li className="meal-component-picker__empty">לא נמצאו תוצאות</li>
+          ) : null}
+          {filteredProducts.length > 0 ? (
+            <li className="meal-component-picker__group" role="presentation">
+              <span className="meal-component-picker__group-label">מוצרים</span>
+              <ul className="meal-component-picker__group-list" role="group">
+                {filteredProducts.map((item) => {
+                  const optionValue = `${PICKER_PREFIX_PRODUCT}${item.id}`
+                  const selected = optionValue === value
+                  return (
+                    <li key={item.id} role="option" aria-selected={selected}>
+                      <button
+                        type="button"
+                        className={
+                          selected
+                            ? 'meal-component-picker__option meal-component-picker__option--selected'
+                            : 'meal-component-picker__option'
+                        }
+                        onClick={() => handleSelect(optionValue)}
+                      >
+                        {item.name}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </li>
+          ) : null}
+          {filteredMeals.length > 0 ? (
+            <li className="meal-component-picker__group" role="presentation">
+              <span className="meal-component-picker__group-label">
+                ארוחות שמורות
+              </span>
+              <ul className="meal-component-picker__group-list" role="group">
+                {filteredMeals.map((item) => {
+                  const optionValue = `${PICKER_PREFIX_MEAL}${item.id}`
+                  const selected = optionValue === value
+                  return (
+                    <li key={item.id} role="option" aria-selected={selected}>
+                      <button
+                        type="button"
+                        className={
+                          selected
+                            ? 'meal-component-picker__option meal-component-picker__option--selected'
+                            : 'meal-component-picker__option'
+                        }
+                        onClick={() => handleSelect(optionValue)}
+                      >
+                        🍽️ {item.name}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </li>
+          ) : null}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
 function buildIngredientPayload(item, productsById) {
   if (item.kind === 'meal') {
     return {
@@ -242,13 +437,41 @@ function MealsPage() {
   const [meals, setMeals] = useState(() => getMeals())
   const [query, setQuery] = useState('')
   const [tagFilter, setTagFilter] = useState('all')
-  const [view, setView] = useState('list')
-  const [editingId, setEditingId] = useState(null)
-  const [form, setForm] = useState(EMPTY_FORM)
-  const [errors, setErrors] = useState({})
+  const [view, setView] = useState(() => readMealFormDraft()?.view ?? 'list')
+  const [editingId, setEditingId] = useState(
+    () => readMealFormDraft()?.editingId ?? null,
+  )
+  const [form, setForm] = useState(() => {
+    const draft = readMealFormDraft()
+    if (!draft?.form) {
+      return {
+        name: '',
+        tags: [],
+        ingredients: [{ ...EMPTY_INGREDIENT }],
+      }
+    }
+    return {
+      name: draft.form.name,
+      tags: [...draft.form.tags],
+      ingredients: draft.form.ingredients.map((item) => ({ ...item })),
+    }
+  })
+  const [errors, setErrors] = useState(() => readMealFormDraft()?.errors ?? {})
 
   const productsById = new Map(products.map((product) => [product.id, product]))
   const mealsById = new Map(meals.map((meal) => [meal.id, meal]))
+
+  useEffect(() => {
+    if (view !== 'form') {
+      return
+    }
+    writeMealFormDraft({
+      view,
+      editingId,
+      form,
+      errors,
+    })
+  }, [view, editingId, form, errors])
 
   function refreshMeals() {
     setMeals(getMeals())
@@ -265,7 +488,7 @@ function MealsPage() {
     setEditingId(null)
     setForm({
       name: '',
-      tags: ['breakfast'],
+      tags: [],
       ingredients: [{ ...EMPTY_INGREDIENT }],
     })
     setErrors({})
@@ -287,6 +510,7 @@ function MealsPage() {
   }
 
   function closeForm() {
+    clearMealFormDraft()
     setView('list')
     setEditingId(null)
     setForm(EMPTY_FORM)
@@ -349,7 +573,7 @@ function MealsPage() {
             productId: rawValue.slice(PICKER_PREFIX_PRODUCT.length),
             mealId: '',
             unitId: GRAMS_UNIT.id,
-            quantity: defaultQuantityForUnit(GRAMS_UNIT),
+            quantity: DEFAULT_PRODUCT_QUANTITY,
             multiplier: '1',
           }
         }
@@ -414,6 +638,7 @@ function MealsPage() {
       return
     }
 
+    clearMealFormDraft()
     refreshMeals()
     closeForm()
   }
@@ -590,48 +815,20 @@ function MealsPage() {
                       >
                         מרכיב
                       </label>
-                      <select
+                      <IngredientComponentPicker
                         id={`meal-ingredient-product-${index}`}
-                        className={
-                          isMealRow
-                            ? 'meal-ingredient-row__product meal-ingredient-row__product--meal'
-                            : 'meal-ingredient-row__product'
-                        }
                         value={pickerValueForIngredient(ingredient)}
-                        onChange={(event) =>
-                          handleComponentPick(index, event.target.value)
-                        }
-                        aria-invalid={Boolean(componentError)}
-                        aria-describedby={
+                        products={products}
+                        meals={selectableMeals}
+                        isMealRow={isMealRow}
+                        invalid={Boolean(componentError)}
+                        describedBy={
                           componentError ? productErrorId : undefined
                         }
-                      >
-                        <option value="">בחרו מוצר או ארוחה</option>
-                        {products.length > 0 ? (
-                          <optgroup label="מוצרים">
-                            {products.map((item) => (
-                              <option
-                                key={item.id}
-                                value={`${PICKER_PREFIX_PRODUCT}${item.id}`}
-                              >
-                                {item.name}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ) : null}
-                        {selectableMeals.length > 0 ? (
-                          <optgroup label="ארוחות שמורות">
-                            {selectableMeals.map((item) => (
-                              <option
-                                key={item.id}
-                                value={`${PICKER_PREFIX_MEAL}${item.id}`}
-                              >
-                                🍽️ {item.name}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ) : null}
-                      </select>
+                        onPick={(nextValue) =>
+                          handleComponentPick(index, nextValue)
+                        }
+                      />
 
                       {isMealRow ? (
                         <div className="meal-ingredient-row__qty meal-ingredient-row__qty--with-select">
@@ -693,7 +890,7 @@ function MealsPage() {
                             onFocus={selectQuantityOnFocus}
                             onClick={selectQuantityOnFocus}
                             onMouseUp={preserveQuantitySelectionOnMouseUp}
-                            placeholder="2"
+                            placeholder={DEFAULT_PRODUCT_QUANTITY}
                             aria-invalid={Boolean(itemErrors.quantityGrams)}
                             aria-describedby={
                               itemErrors.quantityGrams
