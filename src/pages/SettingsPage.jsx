@@ -7,6 +7,7 @@ import {
   parseLibraryJson,
   saveGoals,
 } from '../services/storage.js'
+import { shareJsonFile } from '../platform/share.js'
 
 const GOAL_FIELDS = [
   { name: 'calories', label: 'קלוריות', id: 'goal-calories' },
@@ -25,20 +26,6 @@ function goalsToForm(goals) {
     fat: String(goals.fat),
     allowedCalorieOverage: String(goals.allowedCalorieOverage ?? 100),
   }
-}
-
-function downloadJsonFile(filename, data) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], {
-    type: 'application/json',
-  })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
 }
 
 function SettingsPage() {
@@ -77,11 +64,20 @@ function SettingsPage() {
     setBackupError(null)
   }
 
-  function handleExport() {
+  async function handleExport() {
     clearBackupMessages()
     try {
-      const data = exportLibrary()
-      downloadJsonFile(getLibraryExportFilename(), data)
+      const result = await shareJsonFile({
+        filename: getLibraryExportFilename(),
+        json: exportLibrary(),
+        title: 'גיבוי Weekplate',
+      })
+      if (result.cancelled) {
+        return
+      }
+      if (!result.ok) {
+        throw new Error('export failed')
+      }
       setBackupStatus('הקובץ יוצא בהצלחה.')
     } catch {
       setBackupError('הייצוא נכשל.')

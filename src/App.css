@@ -3,8 +3,11 @@
   width: 100%;
   max-width: var(--app-max-width);
   min-height: 100svh;
+  min-height: 100dvh;
   height: 100svh;
+  height: 100dvh;
   max-height: 100svh;
+  max-height: 100dvh;
   background:
     radial-gradient(ellipse 120% 60% at 100% 0%, rgba(184, 232, 212, 0.35), transparent 55%),
     radial-gradient(ellipse 90% 50% at 0% 20%, rgba(255, 201, 168, 0.22), transparent 50%),
@@ -26,6 +29,7 @@
   overflow-x: hidden;
   overflow-anchor: none;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
 }
 
 .page {
@@ -76,6 +80,8 @@
   box-shadow: var(--shadow-nav);
   padding: var(--space-1) var(--space-2) calc(var(--space-1) + var(--safe-bottom));
   z-index: 10;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .bottom-nav__item {
@@ -1961,6 +1967,8 @@
   flex-direction: column;
   justify-content: flex-end;
   pointer-events: none;
+  height: 100svh;
+  height: 100dvh;
 }
 
 .today-sheet-backdrop {
@@ -1982,11 +1990,13 @@
   flex-direction: column;
   width: 100%;
   max-height: min(78svh, calc(100% - 7.5rem));
+  max-height: min(78dvh, calc(100dvh - var(--safe-top) - 4.5rem));
   background: var(--color-surface);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   box-shadow: 0 -8px 32px rgba(30, 42, 68, 0.14);
   padding-bottom: calc(var(--space-4) + var(--safe-bottom));
   overflow: hidden;
+  overscroll-behavior: contain;
 }
 
 .today-sheet__handle {
@@ -2313,6 +2323,7 @@
 /* Smart Meal Swap */
 .meal-swap-sheet {
   max-height: min(82svh, calc(100% - 5.5rem));
+  max-height: min(82dvh, calc(100dvh - var(--safe-top) - 4.5rem));
 }
 
 .meal-swap-sheet__body {
@@ -2796,6 +2807,7 @@
 /* Balance Day */
 .balance-day-sheet {
   max-height: min(82svh, calc(100% - 5.5rem));
+  max-height: min(82dvh, calc(100dvh - var(--safe-top) - 4.5rem));
 }
 
 .balance-day-sheet__body {
@@ -3557,6 +3569,7 @@
 
 .copy-day-sheet {
   max-height: min(86svh, calc(100% - 4.5rem));
+  max-height: min(86dvh, calc(100dvh - var(--safe-top) - 3rem));
 }
 
 .copy-day-sheet__body {
@@ -4469,5 +4482,16 @@
   .week-selector__day {
     min-height: 48px;
     max-height: 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

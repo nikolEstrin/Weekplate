@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   clampMealQuantity,
   getMealNutritionForSwap,
@@ -134,6 +134,7 @@ function MealSwapSheet({
   initialAlternative = null,
   onDismissPreview = null,
 }) {
+  const dialogRef = useRef(null)
   const startedInPreview =
     initialStep === 'preview' &&
     initialAlternative &&
@@ -148,6 +149,17 @@ function MealSwapSheet({
     startedInPreview ? initialAlternative : null,
   )
   const [confirmError, setConfirmError] = useState('')
+
+  useEffect(() => {
+    dialogRef.current?.focus()
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
 
   const swapMeal = displayItem || item
   const currentQuantity = getPlannerMealQuantity(swapMeal)
@@ -367,10 +379,12 @@ function MealSwapSheet({
         onClick={onClose}
       />
       <div
+        ref={dialogRef}
         className="today-sheet meal-swap-sheet"
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby="meal-swap-sheet-title"
+        tabIndex={-1}
       >
         <div className="today-sheet__handle" aria-hidden="true" />
         <div className="today-sheet__body meal-swap-sheet__body">
@@ -388,7 +402,9 @@ function MealSwapSheet({
               <span className="meal-swap-sheet__nav-spacer" aria-hidden="true" />
             )}
             <div className="meal-swap-sheet__titles">
-              <h2 className="meal-swap-sheet__title">{title}</h2>
+              <h2 id="meal-swap-sheet-title" className="meal-swap-sheet__title">
+                {title}
+              </h2>
               {step === 'results' && recommendations.length > 0 ? (
                 <p className="meal-swap-sheet__subtitle">
                   מצאנו אפשרויות שמתאימות לארוחה שלך

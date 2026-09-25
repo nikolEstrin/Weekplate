@@ -12,6 +12,7 @@ import {
   getWeekStartKey,
   isDayPlanEmpty,
 } from '../services/storage.js'
+import { shareJsonFile } from '../platform/share.js'
 
 function parseDateKey(dateKey) {
   const parts = String(dateKey).split('-').map(Number)
@@ -32,35 +33,6 @@ function formatWeekRange(weekStartKey) {
   return `${formatShortDate(days[0])}–${formatShortDate(days[6])}`
 }
 
-function downloadJsonFile(filename, data) {
-  const blob = new Blob([JSON.stringify(data, null, 2)], {
-    type: 'application/json',
-  })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-}
-
-function canShareFiles() {
-  try {
-    if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') {
-      return false
-    }
-    if (typeof navigator.canShare !== 'function') {
-      return false
-    }
-    const probe = new File(['{}'], 'probe.json', { type: 'application/json' })
-    return navigator.canShare({ files: [probe] })
-  } catch {
-    return false
-  }
-}
-
 /**
  * Export / share the visible week prep (plans + library) as JSON.
  */
@@ -69,8 +41,6 @@ export default function ShareWeekSheet({ weekStartKey, onClose, onShared }) {
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
-
-  const shareAvailable = useMemo(() => canShareFiles(), [])
 
   const plannedDayCount = useMemo(() => {
     let count = 0
@@ -86,50 +56,26 @@ export default function ShareWeekSheet({ weekStartKey, onClose, onShared }) {
     return exportWeekPrep(sourceWeekStart)
   }
 
-  function handleDownload() {
-    setError('')
-    setStatus('')
-    try {
-      const data = buildPayload()
-      downloadJsonFile(getWeekPrepExportFilename(sourceWeekStart), data)
-      setStatus('הקובץ הורד בהצלחה.')
-      onShared?.({ method: 'download' })
-    } catch {
-      setError('הייצוא נכשל.')
-    }
-  }
-
   async function handleShare() {
     setError('')
     setStatus('')
     setBusy(true)
     try {
-      const data = buildPayload()
-      const filename = getWeekPrepExportFilename(sourceWeekStart)
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: 'application/json',
+      const result = await shareJsonFile({
+        filename: getWeekPrepExportFilename(sourceWeekStart),
+        json: buildPayload(),
+        title: 'תכנון שבועי — Weekplate',
       })
-      const file = new File([blob], filename, { type: 'application/json' })
-
-      if (shareAvailable) {
-        await navigator.share({
-          files: [file],
-          title: 'תכנון שבועי — Weekplate',
-          text: 'תכנון הארוחות שלי לשבוע',
-        })
-        setStatus('השיתוף הושלם.')
-        onShared?.({ method: 'share' })
-      } else {
-        downloadJsonFile(filename, data)
-        setStatus('הקובץ הורד בהצלחה.')
-        onShared?.({ method: 'download' })
-      }
-    } catch (err) {
-      if (err && err.name === 'AbortError') {
-        setBusy(false)
+      if (result.cancelled) {
         return
       }
-      setError('השיתוף נכשל. אפשר להוריד את הקובץ במקום.')
+      if (!result.ok) {
+        throw new Error('share failed')
+      }
+      setStatus('הייצוא הושלם.')
+      onShared?.({ method: 'share' })
+    } catch {
+      setError('הייצוא נכשל. אפשר לנסות שוב.')
     } finally {
       setBusy(false)
     }
@@ -145,8 +91,8 @@ export default function ShareWeekSheet({ weekStartKey, onClose, onShared }) {
       heroIcon={<CopyIconWeek />}
       onClose={onClose}
       error={error}
-      submitLabel={shareAvailable ? 'שתף' : 'הורד קובץ'}
-      onSubmit={shareAvailable ? handleShare : handleDownload}
+      submitLabel="שתף או הורד"
+      onSubmit={handleShare}
       submitDisabled={busy}
       quantityTitle="כמויות התכנון נשמרות"
       quantityText="הכמויות במתכונים השמורים של המקבל לא יוחלפו"
@@ -160,19 +106,6 @@ export default function ShareWeekSheet({ weekStartKey, onClose, onShared }) {
           <li>מוצרים וארוחות — רק מה שחסר אצל המקבל יתווסף</li>
         </ul>
       </CopyPlanSection>
-
-      {shareAvailable ? (
-        <CopyPlanSection title="או הורדה">
-          <button
-            type="button"
-            className="btn-secondary share-week-sheet__download"
-            onClick={handleDownload}
-            disabled={busy}
-          >
-            הורד קובץ JSON
-          </button>
-        </CopyPlanSection>
-      ) : null}
 
       {status ? (
         <p className="goals-form__status" role="status">

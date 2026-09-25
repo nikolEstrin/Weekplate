@@ -1,6 +1,7 @@
 /**
  * Shared chrome + building blocks for Copy Day / Copy Week bottom sheets.
  */
+import { useEffect, useRef } from 'react'
 
 export function CopyPlanSheet({
   theme = 'day',
@@ -19,6 +20,19 @@ export function CopyPlanSheet({
   quantityText = 'כל הכמויות והמנות יועתקו כפי שהן',
   hideQuantityNote = false,
 }) {
+  const dialogRef = useRef(null)
+
+  useEffect(() => {
+    dialogRef.current?.focus()
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
+
   return (
     <div className={`today-sheet-root copy-plan-root copy-plan-root--${theme}`}>
       <button
@@ -28,10 +42,12 @@ export function CopyPlanSheet({
         onClick={onClose}
       />
       <div
+        ref={dialogRef}
         className={`today-sheet copy-day-sheet copy-plan-sheet copy-plan-sheet--${theme}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        tabIndex={-1}
       >
         <div className="today-sheet__handle" aria-hidden="true" />
         <div className="today-sheet__body copy-day-sheet__body">

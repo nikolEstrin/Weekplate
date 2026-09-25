@@ -134,11 +134,13 @@ html {
   max-width: 100%;
   overflow-x: hidden;
   overscroll-behavior-x: none;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
   min-height: 100svh;
+  min-height: 100dvh;
   width: 100%;
   max-width: 100%;
   background: #e8e2d8;
@@ -166,7 +168,17 @@ input,
 select,
 textarea {
   font: inherit;
+  font-size: max(16px, 1em);
   text-align: start;
+}
+
+a,
+button,
+input,
+select,
+textarea,
+label {
+  -webkit-tap-highlight-color: transparent;
 }
 
 h1,

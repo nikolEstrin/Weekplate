@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   BALANCE_ACTION_REDUCE_QUANTITY,
   BALANCE_ACTION_REPLACE_MEAL,
@@ -98,8 +98,20 @@ function BalanceDaySheet({
   onConfirmAction,
   onClose,
 }) {
+  const dialogRef = useRef(null)
   const [previewEntry, setPreviewEntry] = useState(null)
   const [confirmError, setConfirmError] = useState('')
+
+  useEffect(() => {
+    dialogRef.current?.focus()
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [onClose])
 
   const hasRecommendations =
     Array.isArray(recommendations) && recommendations.length > 0
@@ -182,10 +194,12 @@ function BalanceDaySheet({
         onClick={onClose}
       />
       <div
+        ref={dialogRef}
         className="today-sheet balance-day-sheet"
         role="dialog"
         aria-modal="true"
-        aria-label="איזון היום"
+        aria-labelledby="balance-day-sheet-title"
+        tabIndex={-1}
       >
         <div className="today-sheet__handle" aria-hidden="true" />
         <div className="today-sheet__body balance-day-sheet__body">
@@ -203,7 +217,10 @@ function BalanceDaySheet({
               <span className="balance-day-sheet__nav-spacer" aria-hidden="true" />
             )}
             <div className="balance-day-sheet__titles">
-              <h2 className="balance-day-sheet__title">
+              <h2
+                id="balance-day-sheet-title"
+                className="balance-day-sheet__title"
+              >
                 {isPreview ? 'אישור שינוי' : 'איזון היום'}
               </h2>
             </div>

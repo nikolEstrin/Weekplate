@@ -18,6 +18,19 @@ dist-ssr
 coverage
 *.tsbuildinfo
 
+# Environment and Apple signing secrets
+.env
+.env.local
+*.p12
+*.mobileprovision
+AuthKey_*.p8
+
+# iOS generated output (also covered by ios/.gitignore)
+ios/App/build
+ios/DerivedData
+ios/App/App/public
+ios/**/xcuserdata
+
 # Cursor
 .cursor
 .cursorignore
