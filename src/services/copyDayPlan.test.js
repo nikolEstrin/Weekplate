@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { beforeEach, describe, it } from 'node:test'
+import localState from './localState.js'
 
 function createMemoryStorage() {
   const store = new Map()
@@ -20,7 +21,7 @@ function createMemoryStorage() {
 }
 
 // storage.js seeds starter products at import time.
-globalThis.localStorage = createMemoryStorage()
+globalThis.localStorage = localState
 
 const {
   buildCopiedDayPlan,
@@ -87,7 +88,8 @@ function productItem({ id, name, quantityGrams = 50 }) {
 }
 
 beforeEach(() => {
-  globalThis.localStorage = createMemoryStorage()
+  localState.reset()
+  globalThis.localStorage = localState
   // Skip starter/migration side effects that need empty flags.
   localStorage.setItem('weekplate_migrations', JSON.stringify({
     meals_tags_v1: true,

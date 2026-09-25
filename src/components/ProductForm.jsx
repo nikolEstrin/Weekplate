@@ -5,6 +5,7 @@ import {
   UNIT_NAME_SUGGESTIONS,
   updateProduct,
 } from '../services/storage.js'
+import { uuidV4 } from '../utils/uuid.js'
 
 const EMPTY_FORM = {
   name: '',
@@ -198,10 +199,7 @@ function NutritionIcon({ tone }) {
 }
 
 function createLocalId() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-  return `unit-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+  return uuidV4()
 }
 
 function productToForm(product) {

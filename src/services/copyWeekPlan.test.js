@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { beforeEach, describe, it } from 'node:test'
+import localState from './localState.js'
 
 function createMemoryStorage() {
   const store = new Map()
@@ -19,7 +20,7 @@ function createMemoryStorage() {
   }
 }
 
-globalThis.localStorage = createMemoryStorage()
+globalThis.localStorage = localState
 
 const {
   buildWeekCopyPairs,
@@ -70,7 +71,8 @@ function dayWithLunch(id, name, mealMultiplier = 1) {
 }
 
 beforeEach(() => {
-  globalThis.localStorage = createMemoryStorage()
+  localState.reset()
+  globalThis.localStorage = localState
   localStorage.setItem(
     'weekplate_migrations',
     JSON.stringify({

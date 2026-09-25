@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "cap:sync": "vite build && cap sync ios",
+    "ios:open": "cap open ios",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "node --test src/services/smartMealSwap.test.js src/utils/nutrition.calorieStatus.test.js src/services/copyDayPlan.test.js src/services/copyWeekPlan.test.js"
+    "test": "node --test \"src/**/*.test.js\" \"tests/**/*.test.js\""
   },
   "dependencies": {
     "@aparajita/capacitor-secure-storage": "^8.0.1",

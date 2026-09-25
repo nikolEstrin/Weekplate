@@ -16,6 +16,11 @@ import {
   quantityToGrams,
 } from '../utils/units.js'
 import starterProductsData from '../data/starterProducts.json' with { type: 'json' }
+import localState from './localState.js'
+import { uuidV4 } from '../utils/uuid.js'
+
+// Preserve the existing synchronous storage implementation behind the database facade.
+const localStorage = localState
 
 const PRODUCTS_KEY = 'weekplate_products'
 const MEALS_KEY = 'weekplate_meals'
@@ -165,11 +170,7 @@ function starterHasCustomUnits(product) {
 }
 
 function createId() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
-  }
-
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  return uuidV4()
 }
 
 function parseNumber(value) {
@@ -2201,7 +2202,7 @@ function normalizePlannerItem(item) {
   return planned
 }
 
-function normalizeDayPlan(plan) {
+export function normalizeDayPlan(plan) {
   if (!plan || typeof plan !== 'object') {
     return getEmptyDayPlan()
   }
@@ -2348,9 +2349,14 @@ function migrateTodayToPlans() {
   }
 }
 
-function ensureMigrations() {
+export function ensureMigrations() {
   migrateMealsToTags()
   migrateTodayToPlans()
+}
+
+export function initializeStorage() {
+  ensureMigrations()
+  return ensureStarterProducts()
 }
 
 export function getAllPlans() {
@@ -3843,7 +3849,3 @@ export function setShoppingItemPurchased(dateKeys, itemId, purchased) {
   writeShoppingPurchasedStore(store)
   return getShoppingPurchased(dateKeys)
 }
-
-// Run migrations + starter catalog when the storage module loads.
-ensureMigrations()
-ensureStarterProducts()
