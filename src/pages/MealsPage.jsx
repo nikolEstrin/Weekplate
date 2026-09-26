@@ -10,6 +10,7 @@ import {
   quantityToGrams,
   updateMeal,
 } from '../services/storage.js'
+import { getSessionGeneration } from '../services/localState.js'
 import {
   isMealIngredient,
 } from '../utils/mealTree.js'
@@ -50,7 +51,10 @@ const EMPTY_FORM = {
 const PICKER_PREFIX_PRODUCT = 'product:'
 const PICKER_PREFIX_MEAL = 'meal:'
 
-/** Survives MealsPage unmount when switching bottom-nav tabs. */
+/**
+ * Survives MealsPage unmount when switching bottom-nav tabs, but never outlives
+ * the data session, so a signed-out user's draft can't reach the next user.
+ */
 let mealFormDraft = null
 
 function clearMealFormDraft() {
@@ -58,11 +62,12 @@ function clearMealFormDraft() {
 }
 
 function readMealFormDraft() {
-  return mealFormDraft
+  if (mealFormDraft?.generation !== getSessionGeneration()) return null
+  return mealFormDraft.draft
 }
 
 function writeMealFormDraft(draft) {
-  mealFormDraft = draft
+  mealFormDraft = { generation: getSessionGeneration(), draft }
 }
 
 function formatMacro(value) {

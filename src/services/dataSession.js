@@ -28,6 +28,7 @@ async function startDataSessionNow({
   adapterFactory,
 }) {
   if (activeSession) await activeSession.stop()
+  await retryPendingDeletions(userId, { adapterFactory })
   const db = await openUserDatabase(userId, { adapterFactory })
   const statusListeners = new Set()
   let status = {
@@ -49,6 +50,7 @@ async function startDataSessionNow({
     syncEngine = createSyncEngine({
       db,
       remote,
+      userId,
       localState,
       getIsOnline: platform.getIsOnline ?? (() => true),
       onStatus: publish,
@@ -151,7 +153,42 @@ export async function stopDataSession() {
   if (activeSession) await activeSession.stop()
 }
 
+const PENDING_DELETIONS_KEY = 'weekplate_pending_db_deletions'
+
+function readPendingDeletions() {
+  try {
+    const list = JSON.parse(globalThis.localStorage?.getItem(PENDING_DELETIONS_KEY) ?? '[]')
+    return Array.isArray(list) ? list.filter((id) => typeof id === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function writePendingDeletions(list) {
+  try {
+    if (list.length) globalThis.localStorage?.setItem(PENDING_DELETIONS_KEY, JSON.stringify(list))
+    else globalThis.localStorage?.removeItem(PENDING_DELETIONS_KEY)
+  } catch {
+    // Best effort; the next successful deletion attempt clears it.
+  }
+}
+
+/** Deletes a user's device database; a failure is retried on the next session start. */
 export async function deleteLocalUserData(userId, options = {}) {
   if (activeSession) await activeSession.stop({ finalSync: false })
-  await deleteUserDatabase(userId, options)
+  try {
+    await deleteUserDatabase(userId, options)
+    writePendingDeletions(readPendingDeletions().filter((id) => id !== userId))
+    return true
+  } catch {
+    writePendingDeletions([...new Set([...readPendingDeletions(), userId])])
+    return false
+  }
+}
+
+async function retryPendingDeletions(currentUserId, options) {
+  for (const userId of readPendingDeletions()) {
+    if (userId === currentUserId) continue
+    await deleteLocalUserData(userId, options)
+  }
 }

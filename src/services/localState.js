@@ -42,8 +42,17 @@ function json(value) {
   return JSON.stringify(value)
 }
 
+/** JSON text with object keys sorted; Postgres jsonb does not keep key order. */
+function canonicalJson(value) {
+  return JSON.stringify(value, (_key, item) =>
+    item && typeof item === 'object' && !Array.isArray(item)
+      ? Object.fromEntries(Object.keys(item).sort().map((key) => [key, item[key]]))
+      : item,
+  )
+}
+
 function same(a, b) {
-  return json(a) === json(b)
+  return canonicalJson(a) === canonicalJson(b)
 }
 
 function notify() {
@@ -131,7 +140,9 @@ async function writeProducts(tx, previous, next, now) {
     const oldProduct = before.get(id)
     const newProduct = after.get(id)
     if (same(oldProduct, newProduct)) continue
-    const existing = privateProducts.get(id)
+    const existing =
+      (await tx.query(`SELECT created_at, updated_at FROM products WHERE id = ?`, [id]))[0] ??
+      null
     const global = globals.get(id)
     if (newProduct && global && equalsGlobal(newProduct, global) && !existing) continue
 
@@ -328,7 +339,11 @@ async function readSnapshot(
   const productRows = await db.query(`SELECT * FROM products ORDER BY created_at, id`)
   const nextPrivateProducts = new Map(productRows.map((row) => [row.id, row]))
   const products = []
-  const deletedStarters = []
+  // Retired catalog entries count as deleted so the bundled starter list never
+  // re-creates them as private products.
+  const deletedStarters = (
+    await db.query(`SELECT id FROM global_products WHERE deleted_at IS NOT NULL`)
+  ).map((row) => row.id)
   for (const global of effectiveGlobals) {
     const override = nextPrivateProducts.get(global.id)
     if (override?.deleted_at) {
@@ -387,7 +402,10 @@ async function readSnapshot(
 function applySnapshot(snapshot) {
   const changed =
     snapshot.values.size !== values.size ||
-    [...snapshot.values].some(([key, value]) => values.get(key) !== value)
+    [...snapshot.values].some(
+      ([key, value]) =>
+        values.get(key) !== value && !same(parse(values.get(key), null), parse(value, null)),
+    )
   values = snapshot.values
   globals = snapshot.globals
   privateProducts = snapshot.privateProducts
@@ -455,6 +473,11 @@ export function reset() {
   notify()
 }
 
+/** Changes whenever the data session ends or another database is attached. */
+export function getSessionGeneration() {
+  return generation
+}
+
 export function subscribe(listener) {
   listeners.add(listener)
   return () => listeners.delete(listener)
@@ -486,6 +509,7 @@ const localState = {
   subscribe,
   subscribeDataChanges,
   getDataVersion,
+  getSessionGeneration,
   flushWrites,
   getLastWriteError,
   getAttachedDatabase,

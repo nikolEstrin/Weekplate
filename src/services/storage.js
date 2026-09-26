@@ -15,6 +15,7 @@ import {
   defaultQuantityForUnit,
   quantityToGrams,
 } from '../utils/units.js'
+import { normalizeImportIds } from '../utils/importIds.js'
 import starterProductsData from '../data/starterProducts.json' with { type: 'json' }
 import localState from './localState.js'
 import { uuidV4 } from '../utils/uuid.js'
@@ -1315,11 +1316,12 @@ export function parseLibraryJson(text) {
  * mode: 'merge' | 'replace'
  * @returns {{ ok: boolean, error?: string, products?: object[], meals?: object[] }}
  */
-export function validateLibraryImport(data, mode) {
+export function validateLibraryImport(rawData, mode) {
   const importMode = mode === 'replace' ? 'replace' : mode === 'merge' ? 'merge' : null
   if (!importMode) {
     return { ok: false, error: 'מצב ייבוא לא תקין' }
   }
+  const data = normalizeImportIds(rawData)
 
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return { ok: false, error: 'מבנה הקובץ אינו תקין' }
@@ -1502,9 +1504,14 @@ export function importLibrary(data, mode) {
   }
 
   if (importMode === 'replace') {
-    saveProducts(validated.products)
+    // Exports omit unmodified starters; keep the current ones instead of
+    // deleting them, which would hide the shared catalog entries.
+    const importedIds = new Set(validated.products.map((product) => product.id))
+    const keptStarters = getProducts().filter(
+      (product) => STARTER_PRODUCT_IDS.has(product.id) && !importedIds.has(product.id),
+    )
+    saveProducts([...validated.products, ...keptStarters])
     saveMeals(validated.meals)
-    // Re-seed bundled starters omitted from the export file.
     const products = ensureStarterProducts()
     return {
       ok: true,
@@ -1598,7 +1605,8 @@ export function parseWeekPrepJson(text) {
  *   meals?: object[],
  * }}
  */
-export function validateWeekPrepImport(data) {
+export function validateWeekPrepImport(rawData) {
+  const data = normalizeImportIds(rawData)
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return { ok: false, error: 'מבנה הקובץ אינו תקין' }
   }

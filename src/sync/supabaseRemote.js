@@ -1,4 +1,4 @@
-import { TABLE_KEYS } from './rowMapping.js'
+import { REMOTE_COLUMNS, TABLE_KEYS } from './rowMapping.js'
 
 export function classifyRemoteError(error, responseStatus) {
   const status = Number(responseStatus ?? error?.status ?? error?.statusCode)
@@ -7,6 +7,8 @@ export function classifyRemoteError(error, responseStatus) {
   if (status === 401 || pgCode === 'PGRST301' || pgCode === 'PGRST303') {
     return 'auth'
   }
+  // Temporary server trouble: retry the whole cycle later, never reject rows for it.
+  if (status >= 500 || status === 429 || status === 408) return 'network'
   // A SQLSTATE (e.g. 23514 check violation) means the server answered and rejected the row.
   if (/^[0-9A-Z]{5}$/.test(pgCode) && !pgCode.startsWith('PGRST')) {
     return 'other'
@@ -36,6 +38,11 @@ function remoteError(error, status) {
 
 export function createSupabaseRemote(supabase) {
   return {
+    async getUserId() {
+      const { data } = await supabase.auth.getSession()
+      return data.session?.user?.id ?? null
+    },
+
     async pull(table, cursor, limit = 200, options = {}) {
       const overlap = cursor
         ? new Date(
@@ -47,7 +54,7 @@ export function createSupabaseRemote(supabase) {
         : null
       let query = supabase
         .from(table)
-        .select('*')
+        .select(REMOTE_COLUMNS[table].join(','))
         .order('server_updated_at', { ascending: true })
         .limit(limit)
       if (overlap) query = query.gt('server_updated_at', overlap)
@@ -71,7 +78,7 @@ export function createSupabaseRemote(supabase) {
       const { data, error, status } = await supabase
         .from(table)
         .upsert(payload, { onConflict: conflict })
-        .select()
+        .select(REMOTE_COLUMNS[table].join(','))
       if (error) throw remoteError(error, status)
       return { rows: data ?? [] }
     },

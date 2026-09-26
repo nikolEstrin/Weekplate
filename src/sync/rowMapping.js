@@ -15,6 +15,22 @@ export const TABLE_KEYS = {
   shopping_checks: 'selection_key',
 }
 
+const TIMESTAMPS = ['created_at', 'updated_at', 'server_updated_at']
+const NUTRITION = ['calories_per_100g', 'protein_per_100g', 'carbs_per_100g', 'fat_per_100g']
+
+/**
+ * Columns this app version reads from the cloud. Explicit lists keep installed
+ * apps working when a later migration adds columns.
+ */
+export const REMOTE_COLUMNS = {
+  global_products: ['id', 'name', ...NUTRITION, 'units', 'sort_order', 'deleted_at', 'server_updated_at'],
+  products: ['user_id', 'id', 'name', ...NUTRITION, 'units', 'deleted_at', ...TIMESTAMPS],
+  meals: ['user_id', 'id', 'name', 'tags', 'ingredients', 'deleted_at', ...TIMESTAMPS],
+  day_plans: ['user_id', 'date_key', 'slots', 'deleted_at', ...TIMESTAMPS],
+  user_settings: ['user_id', 'calories', 'protein', 'carbs', 'fat', 'allowed_calorie_overage', ...TIMESTAMPS],
+  shopping_checks: ['user_id', 'selection_key', 'checked', 'deleted_at', ...TIMESTAMPS],
+}
+
 const JSON_COLUMNS = {
   global_products: ['units'],
   products: ['units'],
@@ -73,8 +89,10 @@ export function toRemoteRow(table, localRow) {
 }
 
 export function fromRemoteRow(table, remoteRow) {
-  const row = { ...remoteRow }
-  delete row.user_id
+  const row = {}
+  for (const column of REMOTE_COLUMNS[table] ?? Object.keys(remoteRow)) {
+    if (column !== 'user_id' && column in remoteRow) row[column] = remoteRow[column]
+  }
   if (table === 'user_settings') row.id = 1
   row.sync_status = 'synced'
   return encodeLocalRow(table, row)

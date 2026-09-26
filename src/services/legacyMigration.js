@@ -26,7 +26,7 @@ function remapId(kind, id) {
   const value = String(id ?? '').trim()
   if (!value) throw new Error(`Missing ${kind} id`)
   return isUuid(value)
-    ? value
+    ? value.toLowerCase()
     : uuidV5(`legacy:${kind}:${value}`, LEGACY_UUID_NAMESPACE)
 }
 

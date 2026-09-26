@@ -4,6 +4,29 @@ function clone(value) {
   return structuredClone(value)
 }
 
+// Postgres jsonb stores object keys sorted by length, then bytewise, so rows
+// never come back in the key order the client sent.
+const JSONB_COLUMNS = ['units', 'ingredients', 'slots', 'checked']
+
+function jsonbOrder(value) {
+  if (Array.isArray(value)) return value.map(jsonbOrder)
+  if (value && typeof value === 'object') {
+    const keys = Object.keys(value).sort((a, b) =>
+      a.length !== b.length ? a.length - b.length : a < b ? -1 : a > b ? 1 : 0,
+    )
+    return Object.fromEntries(keys.map((key) => [key, jsonbOrder(value[key])]))
+  }
+  return value
+}
+
+function asStored(row) {
+  const result = clone(row)
+  for (const column of JSONB_COLUMNS) {
+    if (result[column] != null) result[column] = jsonbOrder(result[column])
+  }
+  return result
+}
+
 export function createFakeRemote({ now = () => new Date() } = {}) {
   const tables = new Map()
   let sequence = 0
@@ -25,7 +48,7 @@ export function createFakeRemote({ now = () => new Date() } = {}) {
         const store = tableStore(table)
         const accepted = []
         for (const input of inputRows) {
-          const row = clone(input)
+          const row = asStored(input)
           const key = keyFor(table, userId, row)
           const previous = store.get(key)
           if (
@@ -80,7 +103,7 @@ export function createFakeRemote({ now = () => new Date() } = {}) {
   return {
     forUser: remoteForUser,
     seed(table, userId, row) {
-      tableStore(table).set(keyFor(table, userId, row), clone(row))
+      tableStore(table).set(keyFor(table, userId, row), asStored(row))
     },
     rows(table, userId) {
       return [...tableStore(table).values()]

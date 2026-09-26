@@ -9,6 +9,9 @@ import {
 
 const PULL_TABLES = ['global_products', ...SYNC_TABLES]
 
+/** Errors that end the whole cycle instead of marking single rows as rejected. */
+const ABORT_CODES = new Set(['network', 'auth', 'stopped', 'user_mismatch'])
+
 function newer(a, b) {
   return Date.parse(a ?? 0) > Date.parse(b ?? 0)
 }
@@ -16,6 +19,7 @@ function newer(a, b) {
 export function createSyncEngine({
   db,
   remote,
+  userId = null,
   localState,
   getIsOnline = () => true,
   onStatus = () => {},
@@ -43,6 +47,28 @@ export function createSyncEngine({
     onStatus({ ...status })
   }
 
+  /**
+   * The Supabase client is shared, so its session can switch to another account
+   * (e.g. a deep link) while this user's engine is still running. Every request
+   * must go out under this user's identity, or not at all.
+   */
+  async function assertIdentity() {
+    if (stopped) throw Object.assign(new Error('Sync stopped'), { code: 'stopped' })
+    if (!userId || typeof remote.getUserId !== 'function') return
+    if ((await remote.getUserId()) !== userId) {
+      throw Object.assign(new Error('Signed-in account changed'), { code: 'user_mismatch' })
+    }
+  }
+
+  function assertOwnRows(rows) {
+    if (!userId) return
+    for (const row of rows) {
+      if (row?.user_id != null && row.user_id !== userId) {
+        throw Object.assign(new Error('Signed-in account changed'), { code: 'user_mismatch' })
+      }
+    }
+  }
+
   async function refreshPending() {
     const rows = await db.query(`SELECT COUNT(*) AS count FROM sync_queue`)
     status.pendingCount = Number(rows[0]?.count ?? 0)
@@ -56,18 +82,22 @@ export function createSyncEngine({
   async function pushSnapshots(table, snapshots) {
     const toRemote = ({ row }) => toRemoteRow(table, row)
     try {
+      await assertIdentity()
       const result = await remote.push(table, snapshots.map(toRemote))
+      assertOwnRows(result?.rows ?? [])
       return result?.rows ?? []
     } catch (error) {
-      if (error?.code === 'network' || error?.code === 'auth') throw error
+      if (ABORT_CODES.has(error?.code)) throw error
     }
     const accepted = []
     for (const snapshot of snapshots) {
       try {
+        await assertIdentity()
         const result = await remote.push(table, [toRemote(snapshot)])
+        assertOwnRows(result?.rows ?? [])
         accepted.push(...(result?.rows ?? []))
       } catch (error) {
-        if (error?.code === 'network' || error?.code === 'auth') throw error
+        if (ABORT_CODES.has(error?.code)) throw error
         const attempts = Number(snapshot.entry.attempt_count ?? 0) + 1
         const delay = Math.min(86_400_000, 60_000 * 2 ** (attempts - 1))
         await db.run(
@@ -110,13 +140,13 @@ export function createSyncEngine({
       const acceptedRows = await pushSnapshots(table, snapshots)
       const accepted = new Map(
         acceptedRows.map((row) => [
-          getEntityId(table, fromRemoteRow(table, row)),
+          String(getEntityId(table, fromRemoteRow(table, row))).toLowerCase(),
           row,
         ]),
       )
       await db.transaction(async (tx) => {
         for (const { entry, row } of snapshots) {
-          const remoteRow = accepted.get(String(entry.entity_id))
+          const remoteRow = accepted.get(String(entry.entity_id).toLowerCase())
           if (!remoteRow) continue
           const current = (
             await tx.query(`SELECT updated_at FROM ${table} WHERE ${key} = ?`, [
@@ -144,9 +174,11 @@ export function createSyncEngine({
     let pageCursor = storedCursor
     let firstPage = true
     for (;;) {
+      await assertIdentity()
       const page = await remote.pull(table, pageCursor, 200, {
         overlap: firstPage,
       })
+      if (table !== 'global_products') assertOwnRows(page.rows)
       await db.transaction(async (tx) => {
         for (const remoteRow of page.rows) {
         if (table === 'global_products') {
