@@ -8,12 +8,20 @@ import {
 } from './legacyMigration.js'
 
 let activeSession = null
+let startChain = Promise.resolve()
 
 function timeout(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
-export async function startDataSession({
+/** Starts are serialized so one database file is never opened twice. */
+export function startDataSession(options) {
+  const result = startChain.then(() => startDataSessionNow(options))
+  startChain = result.catch(() => {})
+  return result
+}
+
+async function startDataSessionNow({
   userId,
   remote = null,
   platform = {},
@@ -53,9 +61,16 @@ export async function startDataSession({
   await localState.flushWrites()
 
   if (syncEngine) {
+    const hasSyncedBefore =
+      (await db.query(`SELECT 1 FROM meta WHERE key LIKE 'cursor:%' LIMIT 1`)).length > 0
     syncEngine.start()
-    if (await (platform.getIsOnline?.() ?? true)) {
-      await syncEngine.requestSync('initial')
+    // Local data is usable immediately; only a device's very first sync is awaited
+    // (bounded), so a new install shows the account's data instead of an empty app.
+    if (!hasSyncedBefore && (await (platform.getIsOnline?.() ?? true))) {
+      await Promise.race([
+        syncEngine.requestSync('initial'),
+        timeout(platform.initialSyncTimeoutMs ?? 10_000),
+      ])
     }
   }
 
@@ -89,7 +104,7 @@ export async function startDataSession({
     if (typeof cleanup === 'function') cleanups.push(cleanup)
   }
 
-  let stopped = false
+  let stopPromise = null
   const session = {
     syncEngine,
     getStatus: () => (syncEngine ? syncEngine.getStatus() : { ...status }),
@@ -105,23 +120,28 @@ export async function startDataSession({
       if (syncEngine) await syncEngine.requestSync('flush')
     },
     legacyReport,
-    async stop() {
-      if (stopped) return
-      stopped = true
-      for (const cleanup of cleanups) await cleanup()
-      await localState.flushWrites()
-      if (syncEngine) {
-        await Promise.race([
-          syncEngine.requestSync('final'),
-          timeout(3000),
-        ]).catch(() => {})
-        await Promise.race([syncEngine.stop(), timeout(3000)])
-      }
-      await db.close()
-      localState.reset()
-      statusListeners.clear()
-      if (activeSession === session) activeSession = null
+    stop(options) {
+      stopPromise ??= stopNow(options)
+      return stopPromise
     },
+  }
+
+  async function stopNow({ finalSync = true } = {}) {
+    for (const cleanup of cleanups) await cleanup()
+    await localState.flushWrites().catch(() => {})
+    if (syncEngine && !finalSync) {
+      await Promise.race([syncEngine.stop(), timeout(3000)])
+    } else if (syncEngine) {
+      await Promise.race([
+        syncEngine.requestSync('final'),
+        timeout(3000),
+      ]).catch(() => {})
+      await Promise.race([syncEngine.stop(), timeout(3000)])
+    }
+    localState.reset()
+    await db.close().catch(() => {})
+    statusListeners.clear()
+    if (activeSession === session) activeSession = null
   }
   activeSession = session
   return session
@@ -132,6 +152,6 @@ export async function stopDataSession() {
 }
 
 export async function deleteLocalUserData(userId, options = {}) {
-  if (activeSession) await activeSession.stop()
+  if (activeSession) await activeSession.stop({ finalSync: false })
   await deleteUserDatabase(userId, options)
 }

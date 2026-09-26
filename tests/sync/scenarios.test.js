@@ -228,6 +228,8 @@ describe('sync scenarios through the storage.js API', () => {
     await session.flush()
     await session.stop()
     session = await open(USER_A, 'phone2')
+    // A device that has synced before opens from local data; the pull runs in the background.
+    await session.flush()
     assert.equal(getProducts().find((entry) => entry.id === item.id).name, 'Phone1 newest edit')
     await session.stop()
   })
@@ -255,6 +257,8 @@ describe('sync scenarios through the storage.js API', () => {
     assert.ok(serverRow('meals', meal.id).deleted_at)
 
     session = await open(USER_A, 'phone1')
+    assert.ok(getMeals().some((entry) => entry.id === meal.id), 'opens from local data first')
+    await session.flush()
     assert.ok(!getMeals().some((entry) => entry.id === meal.id))
     await session.stop()
   })

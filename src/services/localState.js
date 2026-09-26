@@ -27,6 +27,8 @@ let writeChain = Promise.resolve()
 let lastWriteError = null
 let localVersion = 0
 let generation = 0
+let dataVersion = 0
+const dataListeners = new Set()
 
 function parse(value, fallback) {
   try {
@@ -371,10 +373,30 @@ async function readSnapshot(
 }
 
 function applySnapshot(snapshot) {
+  const changed =
+    snapshot.values.size !== values.size ||
+    [...snapshot.values].some(([key, value]) => values.get(key) !== value)
   values = snapshot.values
   globals = snapshot.globals
   privateProducts = snapshot.privateProducts
   notify()
+  if (changed) {
+    dataVersion += 1
+    for (const listener of dataListeners) listener(dataVersion)
+  }
+}
+
+/**
+ * Fires only when a reload from SQLite (sync pull, import) changed visible data,
+ * never for the app's own synchronous writes — pages use it to re-read.
+ */
+export function subscribeDataChanges(listener) {
+  dataListeners.add(listener)
+  return () => dataListeners.delete(listener)
+}
+
+export function getDataVersion() {
+  return dataVersion
 }
 
 /**
@@ -450,6 +472,8 @@ const localState = {
   detach,
   reset,
   subscribe,
+  subscribeDataChanges,
+  getDataVersion,
   flushWrites,
   getLastWriteError,
   getAttachedDatabase,
