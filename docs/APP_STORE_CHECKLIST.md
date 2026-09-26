@@ -26,6 +26,8 @@ credentials, legal details, final branding or a physical iPhone.
 ## Legal and contact
 
 - [ ] Fill placeholders in `docs/PRIVACY_POLICY.md` (legal name, region, contact email) and publish it at a public URL.
+- [ ] Set `VITE_PRIVACY_POLICY_URL` to that URL for the release build (the Settings link is hidden while it's empty).
+- [ ] Confirm the export-compliance answer (see the encryption note in `IOS_APP_STORE_RELEASE.md`).
 - [ ] Publish a support page / contact email and enter the Support URL.
 
 ## Branding

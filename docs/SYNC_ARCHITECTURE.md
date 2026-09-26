@@ -47,6 +47,18 @@ then shows "some changes were not saved to the cloud".
 
 Retries are idempotent: pushing the same row twice is a no-op upsert with the same
 `updated_at`, and IDs are client-generated UUIDs, so retries never duplicate data.
+Imported files are normalized first (`src/utils/importIds.js`): UUIDs are lowercased
+and old non-UUID ids map to deterministic UUID v5 values, with references rewritten.
+
+**Identity guard.** The engine is bound to the user whose database it opened.
+Before every push batch and pull page it checks that the current auth session
+still belongs to that user, and it rejects any returned row with another `user_id`.
+On a mismatch, or once the engine is stopped, the cycle aborts (`user_mismatch` /
+`stopped`) and nothing more is sent or applied.
+
+JSON columns are compared with key-order-independent (canonical) JSON, because
+Postgres `jsonb` does not keep key order. Otherwise every pulled row would look
+changed and be re-uploaded.
 
 ## Pull
 

@@ -13,7 +13,7 @@
 | Devices | iPhone only (`TARGETED_DEVICE_FAMILY = 1`), portrait |
 | URL scheme | `weekplate` (auth callback `weekplate://auth/callback`) |
 | Web assets | packaged from `dist/` (no remote `server.url`) |
-| Encryption export | `ITSAppUsesNonExemptEncryption = false` (HTTPS only) |
+| Encryption export | `ITSAppUsesNonExemptEncryption = false` (see note below) |
 | Privacy manifest | `ios/App/App/PrivacyInfo.xcprivacy` |
 
 Native plugins: app, keyboard, status-bar, splash-screen, haptics, network, share,
@@ -31,8 +31,16 @@ npm run ios:open             # opens Xcode
 In Xcode: select the `App` target → Signing & Capabilities → choose your Team.
 Run on a simulator or device.
 
-The Supabase URL and publishable key are embedded at build time. Build with the
-production values for TestFlight and App Store builds.
+The Supabase URL, publishable key and `VITE_PRIVACY_POLICY_URL` are embedded at
+build time. Build with the production values for TestFlight and App Store builds; the
+Settings privacy-policy link is hidden when `VITE_PRIVACY_POLICY_URL` is empty.
+
+**Encryption export note (owner decision):** the app's own encryption is HTTPS/TLS
+through the system, which is exempt. `@capacitor-community/sqlite` links the
+SQLCipher library, but database encryption is disabled (`iosIsEncryption: false`,
+no passphrase is ever set; data is protected by iOS data protection). On that
+basis the plist declares `false`. Confirm this answer yourself in App Store Connect's
+export-compliance questions before the first submission.
 
 ## CI
 

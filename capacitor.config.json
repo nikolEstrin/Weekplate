@@ -21,7 +21,8 @@
       "backgroundColor": "#FAF6F0"
     },
     "CapacitorSQLite": {
-      "iosDatabaseLocation": "Library/CapacitorDatabase"
+      "iosDatabaseLocation": "Library/CapacitorDatabase",
+      "iosIsEncryption": false
     }
   }
 }

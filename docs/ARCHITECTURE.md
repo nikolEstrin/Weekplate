@@ -73,9 +73,15 @@ No network request blocks startup when local data exists.
 Supabase email/password with PKCE. Sessions are stored in the iOS Keychain via
 `@aparajita/capacitor-secure-storage` (browser dev uses localStorage). Auth emails
 redirect to `weekplate://auth/callback`, handled by `AppRoot.jsx` via the Capacitor
-`appUrlOpen` event. Account deletion calls the `delete-account` Edge Function, which
-verifies the caller's JWT and deletes the auth user with the service role
-(server-side only); all private rows cascade.
+`appUrlOpen` event. Only PKCE `code` callbacks are accepted, and they are ignored
+while a user is already signed in (a link can't silently switch accounts).
+
+Account deletion calls the `delete-account` Edge Function, which verifies the
+caller's JWT and deletes the auth user with the service role (server-side only).
+All private rows cascade. A repeated call for an already-deleted user returns
+success. The app then deletes the local database and signs out. If the local file
+can't be deleted, it is recorded and deleted again at the next session start.
+Share-sheet export files are removed from the cache after sharing.
 
 ## Development-only local mode
 
