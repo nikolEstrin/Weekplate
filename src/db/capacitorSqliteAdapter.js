@@ -36,11 +36,22 @@ export async function createCapacitorSqliteAdapter(databaseName) {
   await connection.open()
   const isWeb = Capacitor.getPlatform() === 'web'
 
-  const api = {
-    async query(sql, params = []) {
-      const result = await connection.query(sql, params)
-      return result.values ?? []
+  async function query(sql, params = []) {
+    const result = await connection.query(sql, params)
+    return result.values ?? []
+  }
+
+  // Saving the web store exports the database, which ends an open transaction,
+  // so statements inside a transaction must not save; the commit saves once.
+  const tx = {
+    query,
+    async run(sql, params = []) {
+      await connection.run(sql, params, false)
     },
+  }
+
+  const api = {
+    query,
     async run(sql, params = []) {
       await connection.run(sql, params, false)
       if (isWeb) await manager.saveToStore(databaseName)
@@ -48,12 +59,12 @@ export async function createCapacitorSqliteAdapter(databaseName) {
     async transaction(callback) {
       await connection.beginTransaction()
       try {
-        const result = await callback(api)
+        const result = await callback(tx)
         await connection.commitTransaction()
         if (isWeb) await manager.saveToStore(databaseName)
         return result
       } catch (error) {
-        await connection.rollbackTransaction()
+        await connection.rollbackTransaction().catch(() => {})
         throw error
       }
     },
@@ -68,5 +79,11 @@ export async function createCapacitorSqliteAdapter(databaseName) {
 
 export async function deleteCapacitorDatabase(databaseName) {
   const manager = await getManager()
-  await manager.deleteDatabase(databaseName)
+  const { result: connected } = await manager.isConnection(databaseName, false)
+  const connection = connected
+    ? await manager.retrieveConnection(databaseName, false)
+    : await manager.createConnection(databaseName, false, 'no-encryption', 1, false)
+  if (!(await connection.isDBOpen()).result) await connection.open()
+  await connection.delete()
+  await manager.closeConnection(databaseName, false).catch(() => {})
 }
