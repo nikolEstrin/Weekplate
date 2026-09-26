@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { getAuthErrorMessage } from '../auth/authErrors'
 import '../auth/auth.css'
 
+const PRIVACY_POLICY_URL = import.meta.env.VITE_PRIVACY_POLICY_URL?.trim() || ''
+
 export default function AccountSection({ email, onSignOut, onDeleteAccount }) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [confirmation, setConfirmation] = useState('')
@@ -70,6 +72,16 @@ export default function AccountSection({ email, onSignOut, onDeleteAccount }) {
       >
         מחיקת חשבון
       </button>
+      {PRIVACY_POLICY_URL && (
+        <a
+          className="account-card__privacy"
+          href={PRIVACY_POLICY_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          מדיניות פרטיות
+        </a>
+      )}
 
       {dialogOpen && (
         <div className="today-sheet-root account-dialog-root">

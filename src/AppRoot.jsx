@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import App from './App.jsx'
 import { useAuth } from './auth/AuthProvider.jsx'
 import { getAuthErrorMessage } from './auth/authErrors.js'
@@ -15,7 +15,7 @@ const DEV_LOCAL_USER =
     ? { id: '00000000-0000-4000-8000-00000000d0e0', email: 'local-dev' }
     : null
 
-const AUTH_CALLBACK_PARAMS = ['code', 'token_hash', 'error', 'error_code']
+const AUTH_CALLBACK_PARAMS = ['code', 'error', 'error_code']
 const handledUrls = new Set()
 
 function isAuthCallback(url) {
@@ -28,10 +28,12 @@ function isAuthCallback(url) {
   }
 }
 
-function useAuthCallbacks(onError) {
+function useAuthCallbacks(onError, isSignedInRef) {
   useEffect(() => {
     function handle(url) {
       if (handledUrls.has(url) || !isAuthCallback(url)) return
+      // A link must never switch an already signed-in app to another account.
+      if (isSignedInRef.current) return
       handledUrls.add(url)
       handleAuthCallbackUrl(url).then((result) => {
         if (!result.ok) onError(result.errorCode)
@@ -44,13 +46,17 @@ function useAuthCallbacks(onError) {
       handle(url)
     }
     return onDeepLink(handle)
-  }, [onError])
+  }, [onError, isSignedInRef])
 }
 
 export default function AppRoot() {
   const auth = useAuth()
   const [callbackError, setCallbackError] = useState('')
-  useAuthCallbacks(setCallbackError)
+  const isSignedInRef = useRef(false)
+  useEffect(() => {
+    isSignedInRef.current = auth.status === 'signedIn'
+  }, [auth.status])
+  useAuthCallbacks(setCallbackError, isSignedInRef)
 
   if (auth.status === 'unconfigured') {
     if (DEV_LOCAL_USER) {

@@ -169,6 +169,15 @@
   color: var(--color-danger);
 }
 
+.account-card__privacy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  color: var(--color-accent);
+  font-weight: var(--font-weight-semibold);
+}
+
 .account-dialog-root {
   z-index: 60;
 }

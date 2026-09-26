@@ -45,6 +45,11 @@ Deno.serve(async (request) => {
       auth: { persistSession: false, autoRefreshToken: false },
     })
     const { data, error } = await verifier.auth.getUser(match[1])
+    // The token's signature was verified but its user is gone: an earlier
+    // request deleted the account and its response was lost. Report success.
+    if (error?.code === 'user_not_found') {
+      return json(request, { ok: true, alreadyDeleted: true })
+    }
     if (error || !data.user) {
       return json(request, { ok: false, error: 'unauthorized' }, 401)
     }

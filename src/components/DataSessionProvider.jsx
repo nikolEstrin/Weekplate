@@ -24,6 +24,7 @@ export function DataSessionProvider({ user, cloud = true, children }) {
   const [writeError, setWriteError] = useState(null)
   const [failed, setFailed] = useState(false)
   const [leaving, setLeaving] = useState(false)
+  const [attempt, setAttempt] = useState(0)
   const sessionRef = useRef(null)
   const deletingRef = useRef(false)
   const userId = user.id
@@ -56,7 +57,7 @@ export function DataSessionProvider({ user, cloud = true, children }) {
       setSession(null)
       current?.stop({ finalSync: !deletingRef.current })
     }
-  }, [userId, cloud])
+  }, [userId, cloud, attempt])
 
   useEffect(() => {
     if (!session) return undefined
@@ -91,6 +92,7 @@ export function DataSessionProvider({ user, cloud = true, children }) {
     }
     setLeaving(true)
     await deleteLocalUserData(userId)
+    await signOutCloud()
     return result
   }
 
@@ -98,8 +100,23 @@ export function DataSessionProvider({ user, cloud = true, children }) {
     return (
       <main className="auth-screen" dir="rtl">
         <p className="auth-error" role="alert">
-          לא הצלחנו לפתוח את הנתונים במכשיר. נסו לסגור ולפתוח את האפליקציה מחדש.
+          לא הצלחנו לפתוח את הנתונים במכשיר.
         </p>
+        <button
+          className="auth-submit"
+          type="button"
+          onClick={() => {
+            setFailed(false)
+            setAttempt((value) => value + 1)
+          }}
+        >
+          לנסות שוב
+        </button>
+        {cloud && (
+          <button className="btn-secondary" type="button" onClick={() => signOutCloud()}>
+            התנתקות
+          </button>
+        )}
       </main>
     )
   }

@@ -96,7 +96,7 @@ export async function deleteAccount() {
     if (error || data?.ok !== true) {
       return { ok: false, errorCode: 'delete_failed' }
     }
-    await supabase.auth.signOut({ scope: 'local' })
+    // The caller signs out after removing this user's data from the device.
     return { ok: true }
   } catch (error) {
     return failure(error)
@@ -123,18 +123,11 @@ export async function handleAuthCallbackUrl(url) {
         : callbackType === 'signup' || callbackType === 'email'
           ? 'signup'
           : 'unknown'
+    // Only PKCE codes are accepted: exchanging one needs the verifier stored on
+    // this device, so a link crafted from someone else's token can't sign in here.
     const code = value('code')
     if (code) {
       const { error } = await supabase.auth.exchangeCodeForSession(code)
-      return error ? failure(error) : { ok: true, type }
-    }
-
-    const tokenHash = value('token_hash')
-    if (tokenHash && callbackType) {
-      const { error } = await supabase.auth.verifyOtp({
-        token_hash: tokenHash,
-        type: callbackType,
-      })
       return error ? failure(error) : { ok: true, type }
     }
     return { ok: false, errorCode: 'invalid_callback' }

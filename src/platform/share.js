@@ -33,13 +33,20 @@ export async function shareJsonFile({ filename, json, title }) {
 
   try {
     if (isNativePlatform()) {
+      const path = `exports/${filename}`
       const result = await Filesystem.writeFile({
-        path: filename,
+        path,
         data: contents,
         directory: Directory.Cache,
         encoding: Encoding.UTF8,
+        recursive: true,
       })
-      await Share.share({ title, files: [result.uri] })
+      try {
+        await Share.share({ title, files: [result.uri] })
+      } finally {
+        // The share sheet has finished with the file; keep no data copies in the cache.
+        await Filesystem.deleteFile({ path, directory: Directory.Cache }).catch(() => {})
+      }
       return { ok: true }
     }
 
