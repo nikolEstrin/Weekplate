@@ -42,6 +42,10 @@ const storage = await import(
 const shopping = await import(
   pathToFileURL(path.join(root, 'src/utils/shoppingList.js')).href
 )
+const { default: localState } = await import(
+  pathToFileURL(path.join(root, 'src/services/localState.js')).href
+)
+store.clear = () => localState.reset()
 
 const results = []
 function check(area, fn) {
@@ -87,7 +91,7 @@ check('Repeated product across dates combines', () => {
 
   storage.addMealToDayPlan(d1, meal, 'lunch', [p])
   storage.addMealToDayPlan(d2, meal, 'lunch', [p])
-  storage.updatePlannerMealMultiplier(d2, storage.getDayPlan(d2).lunch.id, 2)
+  storage.updatePlannerMealMultiplier(d2, storage.getDayPlan(d2).lunch[0].id, 2)
 
   const list = storage.generateShoppingList([d1, d2])
   assert.equal(list.items.length, 1)
