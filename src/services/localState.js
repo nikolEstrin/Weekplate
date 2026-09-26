@@ -98,6 +98,18 @@ function equalsGlobal(product, globalRow) {
   return same(normalizedProduct(product), normalizedProduct(productFromRow(globalRow)))
 }
 
+/**
+ * A local edit must sort after the version it was made from, even when this
+ * device's clock is behind the device that wrote that version; otherwise the
+ * server would skip the push as stale and the edit would never sync.
+ */
+export function nextUpdatedAt(now, previousUpdatedAt) {
+  const previous = Date.parse(previousUpdatedAt ?? '')
+  const current = Date.parse(now)
+  if (!Number.isFinite(previous) || current > previous) return now
+  return new Date(previous + 1).toISOString()
+}
+
 async function queueRow(tx, table, id, operation, now) {
   await tx.run(
     `INSERT INTO sync_queue(entity_type, entity_id, operation, created_at,
@@ -126,7 +138,7 @@ async function writeProducts(tx, previous, next, now) {
     if (newProduct) {
       const row = productToRow(newProduct, {
         created_at: existing?.created_at ?? now,
-        updated_at: now,
+        updated_at: nextUpdatedAt(now, existing?.updated_at),
         deleted_at: null,
       })
       await upsertLocalRow(tx, 'products', row)
@@ -137,7 +149,7 @@ async function writeProducts(tx, previous, next, now) {
       if (!source) continue
       const row = productToRow(source, {
         created_at: existing?.created_at ?? now,
-        updated_at: now,
+        updated_at: nextUpdatedAt(now, existing?.updated_at),
         deleted_at: now,
       })
       await upsertLocalRow(tx, 'products', row)
@@ -194,7 +206,7 @@ async function writeCollection(tx, key, previous, next, now) {
     const row = {
       ...config.toRow(item, id),
       created_at: old?.created_at ?? now,
-      updated_at: now,
+      updated_at: nextUpdatedAt(now, old?.updated_at),
       deleted_at: after.has(id) ? null : now,
       server_updated_at: old?.server_updated_at ?? null,
       sync_status: 'pending',
@@ -231,7 +243,7 @@ async function persistChange(target, key, previousRaw, nextRaw) {
         fat: next.fat,
         allowed_calorie_overage: next.allowedCalorieOverage ?? 100,
         created_at: current?.created_at ?? now,
-        updated_at: now,
+        updated_at: nextUpdatedAt(now, current?.updated_at),
         server_updated_at: current?.server_updated_at ?? null,
         sync_status: 'pending',
       })
